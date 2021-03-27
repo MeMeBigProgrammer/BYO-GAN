@@ -63,6 +63,7 @@ class MappingLayers(nn.Module):
     def forward(self, input):
         return self.layers(input)
 
+
 class InjectSecondaryNoise(nn.Module):
     def __init__(self, num_channels):
         super().__init__()
@@ -77,14 +78,34 @@ class InjectSecondaryNoise(nn.Module):
 
         return conv_output + (self.weights * noise)
 
+
 class AdaINBlock(nn.Module):
+    def __init__(self, noise_length, num_channels):
+        super().__init__()
+
+        self.instance_norm = nn.InstanceNorm2d(num_channels)
+        self.y_scale = nn.Linear(noise_length, num_channels)
+        self.y_bias = nn.Linear(noise_length, num_channels)
+
+    def forward(self, image):
+        return (self.instance_norm(image) * self.y_scale) + self.y_bias
+
+class StyleGANBlock(nn.Module):
     def __init__(self):
         super().__init__()
 
-        self.y_scale = nn.Linear()
-        self.y_bias = nn.Linear()
+class StyleGAN(nn.Module):
+    def __init__(self, z_size=512, w_size=512, image_channels=3):
+        super().__init__()
 
-        # Instance norm too
+        # z -> w
+        self.noise_mapping = MappingLayers(z_size)
+
+        # Synthesis Network Starting Constant
+        self.starting_constant == nn.Parameter(
+            torch.randn((1, image_channels, 4, 4))
+        )
+
 
 for x, _ in tqdm(images):
     display_image(x)
