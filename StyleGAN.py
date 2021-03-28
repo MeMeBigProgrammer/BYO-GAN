@@ -5,6 +5,7 @@ from torch import nn
 import matplotlib.pyplot as plt
 from tqdm.auto import tqdm
 import math
+from scipy.stats import truncnorm
 
 # IMPORTANT CONSTANTS
 batch_size = 24
@@ -38,6 +39,9 @@ def display_image(images, num_display = 9, save_to_disk=False, save_dir='./outpu
     
     plt.show()
 
+def get_truncated_noise(n_samples, z_dim, truncation):
+    truncated_noise = truncnorm.rvs(-truncation, truncation, size=(n_samples, z_dim ))
+    return torch.Tensor(truncated_noise)
 
 
 class MappingLayers(nn.Module):
@@ -147,17 +151,80 @@ class StyleGANBlock(nn.Module):
             raise ValueError('alpha not valid!')
 
 class StyleGAN(nn.Module):
-    def __init__(self, z_size=512, w_size=512, image_channels=3):
+    def __init__(self, z_size=512, w_size=512, image_channels=3, num_images_fade_in=(800 * 1000)):
         super().__init__()
+        
+        # Save parameters.
+        self.z_size = z_size
+        self.w_size = w_size
 
-        # z -> w
+        self.image_channels = image_channels
+
+        self.num_images_fade_in = num_images_fade_in
+
+        # Z -> W
         self.noise_mapping = MappingLayers(z_size)
 
-        # Synthesis Network Starting Constant
+        # Synthesis network: starting constant
         self.starting_constant == nn.Parameter(
             torch.randn((1, image_channels, 4, 4))
         )
 
+        # Constant -> 4x4
+        self.block_0 = StyleGANBlock(512, 512, image_size=(4,4))
+
+        # 4x4 -> 8x8
+        self.block_1 = StyleGANBlock(512, 512)
+
+        # 8x8 -> 16x16
+        self.block_2 = StyleGANBlock(512, 512, image_size=(16,16), previous_image_size=(8,8))
+
+        # 16x16 -> 32x32
+        self.block_3 = StyleGANBlock(512, 512, image_size=(32,32), previous_image_size=(16,16))
+
+        # 32x32 -> 64x64
+        self.block_4 = StyleGANBlock(512, 256, image_size=(64,64), previous_image_size=(32,32))
+
+        # 64x64 -> 128x128
+        self.block_4 = StyleGANBlock(256, 128, image_size=(128,128), previous_image_size=(64,64))
+
+        # Number of alphas: 6
+    
+    def forward(self, z_noise, z_noise_secondary, discriminator_count):
+        # calculate alphas
+        alphas = self.calculate_alphas(discriminator_count)
+
+        # forward pass
+        
+        
+        # return output images
+        return None
+
+    def calculate_alphas(self, discriminator_count):
+
+        alphas = [0 for x in range(6)] # Change this number to match number of alphas
+        alphas[0] = None
+
+        running_count = float(discriminator_count / self.num_images_fade_in)
+        for index, val in enumerate(alphas):
+            if index == 0:
+                continue
+            
+            if running_count < 1.0:
+                return alphas
+            elif running_count >= 1.0 and running_count <= 2.0:
+                alphas[index] = round(running_count - 1, 7)
+            elif running_count > 2.0:
+                alphas[index] = None
+                if running_count < 3.0:
+                    alphas[index] = 1
+            
+            running_count = running_count - 2
+
+
+class Critic(nn.Module):
+    def __init__(self):
+        super().__init__()
 
 for x, _ in tqdm(images):
     display_image(x)
