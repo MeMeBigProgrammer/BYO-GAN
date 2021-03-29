@@ -92,7 +92,7 @@ class AdaINBlock(nn.Module):
         self.y_bias = nn.Linear(noise_length, num_channels)
 
     def forward(self, image, noise):
-        return (self.instance_norm(image) * self.y_scale(noise))[:, :, None, None] + self.y_bias(noise)[:, :, None, None] # TODO fix?
+        return (self.instance_norm(image) * self.y_scale(noise)[:, :, None, None]) + self.y_bias(noise)[:, :, None, None] # TODO fix?
 
 class StyleGANBlock(nn.Module):
     def __init__(self, in_channels, out_channels, image_color_channels=3, noise_dim=512, image_size=(8,8), previous_image_size=(4,4), kernel_size=3):
@@ -113,7 +113,7 @@ class StyleGANBlock(nn.Module):
         # These layers convert to 3 channels if we're fading in, or if this is the final layer. 
 
         self.large_block_to_image = nn.Conv2d(out_channels, image_color_channels, kernel_size=1) # convert data after convolutions to three color channels
-        self.small_block_to_image = nn.Conv2d(out_channels, image_color_channels, kernel_size=1) # convert small data to three color channels
+        self.small_block_to_image = nn.Conv2d(in_channels, image_color_channels, kernel_size=1) # convert small data to three color channels
         
     def upsample_image(self, image, output_size): #input must have three color channels
         return F.interpolate(image, size=output_size, mode='bilinear')
@@ -198,7 +198,7 @@ class StyleGAN(nn.Module):
         # forward pass
         w_noise = self.noise_mapping(z_noise)
 
-        output = self.block_0(self.starting_constant, z_noise, do_upsample=False)
+        output = self.block_0(self.starting_constant, z_noise, do_upsample=False, alpha=alphas[0])
 
         if alphas[0] is not None:
             return output
@@ -231,7 +231,7 @@ class StyleGAN(nn.Module):
         for index, val in enumerate(alphas):
             
             if running_count < 1.0:
-                return alphas
+                continue
             elif running_count >= 1.0 and running_count <= 2.0:
                 alphas[index] = round(running_count - 1, 7)
             elif running_count > 2.0:
@@ -240,18 +240,15 @@ class StyleGAN(nn.Module):
                     alphas[index] = 1
             
             running_count = running_count - 2
+        
+        if alphas[:1:-1][0] is None:
+            alphas[-1] = 1
+        return alphas
 
 
 class Critic(nn.Module):
     def __init__(self):
         super().__init__()
 
-# for x, _ in tqdm(images):
-#     display_image(x)
-
-a = get_truncated_noise(10, 512, 1)
-b = get_truncated_noise(10, 512, 1)
-
-test = StyleGAN(num_images_fade_in=50)
-
-test(a, 0)
+for x, _ in tqdm(images):
+    print()

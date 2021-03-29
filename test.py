@@ -3,17 +3,27 @@ import torchvision
 from torchvision import datasets, transforms
 from torch import nn
 
-# a = torch.ones((3,2), requires_grad=True)
+def calculate_alphas(num_images_fade_in, discriminator_count):
 
-# b = 4*((a - 3)**2) + 6.2
+    alphas = [0 for x in range(6)]
 
-# print(a)
-# print(b)
+    running_count = float(discriminator_count / num_images_fade_in) + 2
+    for index, val in enumerate(alphas):
+        
+        if running_count < 1.0:
+            return alphas
+        elif running_count >= 1.0 and running_count <= 2.0:
+            alphas[index] = round(running_count - 1, 7)
+        elif running_count > 2.0:
+            alphas[index] = None
+            if running_count < 3.0:
+                alphas[index] = 1
+        
+        running_count = running_count - 2
+    
+        
 
-# print(torch.lerp(a , b, .9))
-
-a = torch.randn((3,3))
-
-print(a.size())
-
-print(a[:, None].size())
+a = [0, 0, None]
+print(a[:1:-1][0] is None)
+a[-1] = 0
+print(a)
