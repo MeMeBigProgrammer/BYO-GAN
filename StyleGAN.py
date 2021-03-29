@@ -46,19 +46,19 @@ def get_truncated_noise(n_samples, z_dim, truncation):
 
 class MappingLayers(nn.Module):
     def __init__(self, in_channels=512, hidden_channels=1024): # The dimensions should remain 1:1 for z -> w. 
-        super.__init__()
+        super().__init__()
         self.layers = nn.Sequential(
-            generate_mapping_block(in_channels, hidden_channels),
-            generate_mapping_block(hidden_channels, hidden_channels),
-            generate_mapping_block(hidden_channels, hidden_channels),
-            generate_mapping_block(hidden_channels, hidden_channels),
-            generate_mapping_block(hidden_channels, hidden_channels),
-            generate_mapping_block(hidden_channels, hidden_channels),
-            generate_mapping_block(hidden_channels, hidden_channels),
+            self.generate_mapping_block(in_channels, hidden_channels),
+            self.generate_mapping_block(hidden_channels, hidden_channels),
+            self.generate_mapping_block(hidden_channels, hidden_channels),
+            self.generate_mapping_block(hidden_channels, hidden_channels),
+            self.generate_mapping_block(hidden_channels, hidden_channels),
+            self.generate_mapping_block(hidden_channels, hidden_channels),
+            self.generate_mapping_block(hidden_channels, hidden_channels),
             nn.Linear(hidden_channels, in_channels)
         )
     
-    def generate_mapping_block(in_chan: int, out_chan:int):
+    def generate_mapping_block(self, in_chan: int, out_chan:int):
         return nn.Sequential(
             nn.Linear(in_chan, out_chan),
             nn.ReLU()
@@ -92,7 +92,7 @@ class AdaINBlock(nn.Module):
         self.y_bias = nn.Linear(noise_length, num_channels)
 
     def forward(self, image, noise):
-        return (self.instance_norm(image) * self.y_scale(noise)) + self.y_bias(noise) # TODO fix?
+        return (self.instance_norm(image) * self.y_scale(noise))[:, :, None, None] + self.y_bias(noise)[:, :, None, None] # TODO fix?
 
 class StyleGANBlock(nn.Module):
     def __init__(self, in_channels, out_channels, image_color_channels=3, noise_dim=512, image_size=(8,8), previous_image_size=(4,4), kernel_size=3):
@@ -121,12 +121,14 @@ class StyleGANBlock(nn.Module):
     def mix_images(self, upsampled, convolution_output, alpha):
         return None
 
-    def forward(self, x, secondary_noise, alpha=None):
+    def forward(self, x, noise, alpha=None, do_upsample=True):
 
         # progressive growth with alpha. input from last block -> convert straight to image -> upsample -> mix
         # On the other end, input -> convolutions -> convert to image -> mix
 
-        upsampled_x = self.simple_upsample(x)
+        upsampled_x = x
+        if do_upsample:
+            upsampled_x = self.simple_upsample(x)
 
         out = self.conv_1(upsampled_x)
         out = self.inject_noise_1(out)
@@ -151,12 +153,11 @@ class StyleGANBlock(nn.Module):
             raise ValueError('alpha not valid!')
 
 class StyleGAN(nn.Module):
-    def __init__(self, z_size=512, w_size=512, image_channels=3, num_images_fade_in=(800 * 1000)):
+    def __init__(self, z_size=512, image_channels=3, num_images_fade_in=(800 * 1000)):
         super().__init__()
         
         # Save parameters.
         self.z_size = z_size
-        self.w_size = w_size
 
         self.image_channels = image_channels
 
@@ -166,8 +167,8 @@ class StyleGAN(nn.Module):
         self.noise_mapping = MappingLayers(z_size)
 
         # Synthesis network: starting constant
-        self.starting_constant == nn.Parameter(
-            torch.randn((1, image_channels, 4, 4))
+        self.starting_constant = nn.Parameter(
+            torch.randn((1, z_size, 4, 4))
         )
 
         # Constant -> 4x4
@@ -186,29 +187,48 @@ class StyleGAN(nn.Module):
         self.block_4 = StyleGANBlock(512, 256, image_size=(64,64), previous_image_size=(32,32))
 
         # 64x64 -> 128x128
-        self.block_4 = StyleGANBlock(256, 128, image_size=(128,128), previous_image_size=(64,64))
+        self.block_5 = StyleGANBlock(256, 128, image_size=(128,128), previous_image_size=(64,64))
 
         # Number of alphas: 6
     
-    def forward(self, z_noise, z_noise_secondary, discriminator_count):
+    def forward(self, z_noise, discriminator_count):
         # calculate alphas
         alphas = self.calculate_alphas(discriminator_count)
 
         # forward pass
+        w_noise = self.noise_mapping(z_noise)
+
+        output = self.block_0(self.starting_constant, z_noise, do_upsample=False)
+
+        if alphas[0] is not None:
+            return output
         
+        output = self.block_1(output, z_noise, alpha=alphas[1])
+        if alphas[1] is not None:
+            return output
         
-        # return output images
-        return None
+        output = self.block_2(output, z_noise, alpha=alphas[2])
+        if alphas[2] is not None:
+            return output
+        
+        output = self.block_3(output, z_noise, alpha=alphas[3])
+        if alphas[3] is not None:
+            return output
+        
+        output = self.block_4(output, z_noise, alpha=alphas[4])
+        if alphas[4] is not None:
+            return output
+
+        output = self.block_5(output, z_noise, alpha=alphas[5])
+
+        return output
 
     def calculate_alphas(self, discriminator_count):
 
         alphas = [0 for x in range(6)] # Change this number to match number of alphas
-        alphas[0] = None
 
-        running_count = float(discriminator_count / self.num_images_fade_in)
+        running_count = float(discriminator_count / self.num_images_fade_in) + 2
         for index, val in enumerate(alphas):
-            if index == 0:
-                continue
             
             if running_count < 1.0:
                 return alphas
@@ -226,5 +246,12 @@ class Critic(nn.Module):
     def __init__(self):
         super().__init__()
 
-for x, _ in tqdm(images):
-    display_image(x)
+# for x, _ in tqdm(images):
+#     display_image(x)
+
+a = get_truncated_noise(10, 512, 1)
+b = get_truncated_noise(10, 512, 1)
+
+test = StyleGAN(num_images_fade_in=50)
+
+test(a, 0)
