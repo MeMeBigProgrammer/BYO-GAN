@@ -7,9 +7,6 @@ from tqdm.auto import tqdm
 import math
 from scipy.stats import truncnorm
 
-# IMPORTANT CONSTANTS
-batch_size = 24
-num_images_fade_in=(800 * 1000)
 
 # LOADING DATA
 intel_image_transformation = transforms.Compose([
@@ -25,7 +22,6 @@ building_images = datasets.ImageFolder('./data/buildings', intel_image_transform
 forest_images = datasets.ImageFolder('./data/forest', intel_image_transformation)
 
 images = torch.utils.data.DataLoader(glacier_images, batch_size=batch_size, shuffle=False, drop_last=False, num_workers=4)
-
 
 def display_image(images, num_display = 9, save_to_disk=False, save_dir='./output', filename="figure"):
     if images.dim() == 3: # single image
@@ -43,7 +39,6 @@ def display_image(images, num_display = 9, save_to_disk=False, save_dir='./outpu
 def get_truncated_noise(n_samples, z_dim, truncation):
     truncated_noise = truncnorm.rvs(-truncation, truncation, size=(n_samples, z_dim ))
     return torch.Tensor(truncated_noise)
-
 
 def calculate_alphas(discriminator_count, num_images_fade_in):
 
@@ -115,6 +110,11 @@ class AdaINBlock(nn.Module):
         self.y_scale = nn.Linear(noise_length, num_channels)
         self.y_bias = nn.Linear(noise_length, num_channels)
 
+        self.y_scale.weight.data.fill_(0)
+        self.y_bias.weight.data.fill_(0)
+        self.y_scale.bias.data.fill_(1)
+        self.y_bias.bias.data.fill_(0)
+
     def forward(self, image, noise):
         return (self.instance_norm(image) * self.y_scale(noise)[:, :, None, None]) + self.y_bias(noise)[:, :, None, None] # TODO fix?
 
@@ -138,12 +138,6 @@ class StyleGANBlock(nn.Module):
 
         self.large_block_to_image = nn.Conv2d(out_channels, image_color_channels, kernel_size=1) # convert data after convolutions to three color channels
         self.small_block_to_image = nn.Conv2d(in_channels, image_color_channels, kernel_size=1) # convert small data to three color channels
-        
-    def upsample_image(self, image, output_size): #input must have three color channels
-        return F.interpolate(image, size=output_size, mode='bilinear')
-    
-    def mix_images(self, upsampled, convolution_output, alpha):
-        return None
 
     def forward(self, x, noise, alpha=None, do_upsample=True):
 
@@ -188,28 +182,29 @@ class StyleGAN(nn.Module):
         # Z -> W
         self.noise_mapping = MappingLayers(z_size)
 
-        # Synthesis network: starting constant
+        # Synthesis network: starting constant, init to 1
         self.starting_constant = nn.Parameter(
-            torch.randn((1, z_size, 4, 4))
+            torch.ones((1, z_size, 4, 4))
         )
 
+
         # Constant -> 4x4
-        self.block_0 = StyleGANBlock(512, 512, image_size=(4,4))
+        self.block_0 = StyleGANBlock(512, 512, image_size=(4,4), image_color_channels=image_channels)
 
         # 4x4 -> 8x8
-        self.block_1 = StyleGANBlock(512, 512)
+        self.block_1 = StyleGANBlock(512, 512, image_color_channels=image_channels)
 
         # 8x8 -> 16x16
-        self.block_2 = StyleGANBlock(512, 512, image_size=(16,16), previous_image_size=(8,8))
+        self.block_2 = StyleGANBlock(512, 512, image_size=(16,16), previous_image_size=(8,8), image_color_channels=image_channels)
 
         # 16x16 -> 32x32
-        self.block_3 = StyleGANBlock(512, 512, image_size=(32,32), previous_image_size=(16,16))
+        self.block_3 = StyleGANBlock(512, 512, image_size=(32,32), previous_image_size=(16,16), image_color_channels=image_channels)
 
         # 32x32 -> 64x64
-        self.block_4 = StyleGANBlock(512, 256, image_size=(64,64), previous_image_size=(32,32))
+        self.block_4 = StyleGANBlock(512, 256, image_size=(64,64), previous_image_size=(32,32), image_color_channels=image_channels)
 
         # 64x64 -> 128x128
-        self.block_5 = StyleGANBlock(256, 128, image_size=(128,128), previous_image_size=(64,64))
+        self.block_5 = StyleGANBlock(256, 128, image_size=(128,128), previous_image_size=(64,64), image_color_channels=image_channels)
 
         # Number of alphas: 6
     
@@ -246,6 +241,8 @@ class StyleGAN(nn.Module):
         return output
 
 
+def get_generator_loss(crit_fake_pred):
+    return -crit_fake_pred.mean()
 
 class Critic(nn.Module):
     def __init__(self, image_channels=3):
@@ -274,7 +271,7 @@ class Critic(nn.Module):
             nn.LeakyReLU(0.2),
             nn.Conv2d(512, 512, kernel_size=4),
             nn.LeakyReLU(0.2),
-            nn.Flatten(end_dim=-1),
+            nn.Flatten(),
             nn.Linear(512, 1)
         )
 
@@ -303,8 +300,31 @@ class Critic(nn.Module):
             out = self.from_rgb(out)
 
         return self.final_layers(out)
+    
+    def get_critic_loss(self, crit_fake_pred, crit_real_pred, epsilon, real_images, fake_images, discriminator_count, num_images_fade_in, c_lambda):
+        mixed_images = (real_images * epsilon) + (1 - epsilon) * fake_images
+        mixed_image_scores = self.forward(mixed_images, discriminator_count, num_images_fade_in)
 
+        gradient = torch.autograd.grad(
+            inputs=mixed_images,
+            outputs=mixed_image_scores,
+            grad_outputs=torch.ones_like(mixed_image_scores), 
+            create_graph=True,
+            retain_graph=True,
+        )[0]
+
+        # create gradient penalty
+
+        gradient = gradient.view(len(gradient), -1)
+
+        gradient_norm = gradient.norm(2, dim=1)
         
+        penalty = ((gradient_norm - 1)**2).mean()
+
+        # put it all together
+
+        return -(crit_real_pred - crit_fake_pred) + (c_lambda * penalty)
+
 
 class MiniBatchStdDev(nn.Module):
     def __init__(self):
@@ -313,8 +333,6 @@ class MiniBatchStdDev(nn.Module):
     def forward(self, x):
         if x.dim() != 4:
             raise ValueError('Tensor dim must be 4, got {} instead.'.format(x.dim()))
-        
-        output = torch.cat((x, torch.std(x[:, None], dim=2)), 1)
 
         return torch.cat((x, torch.std(x[:, None], dim=2)), 1)
 
@@ -356,20 +374,29 @@ class Debug(nn.Module):
         print(x.shape)
         return x
 
-def test():
+# IMPORTANT CONSTANTS
+batch_size = 24
+num_images_fade_in=(800 * 1000)
+c_lambda = 3
+noise_size=512
+device = 'cuda'
+beta_1 = 0
+beta_2 = 0.99
+learning_rate = 0.00018
 
-    a = get_truncated_noise(10, 512, 1)
-    gen = StyleGAN()
+# Init Weights Function (Maybe Not Needed?)
+def init_weights(m):
+    if isinstance(m, nn.Conv2d):
+        torch.nn.init.normal_(m.weight, 0.0, 1.0)
 
-    critic = Critic()
-    out = gen.forward(a, 5, 20)
+# Initialize Generator
+gen = StyleGAN(z_size=noise_size).to(device)
 
-    b = critic.forward(out, 5, 20)
 
-    print(b)
 
-# for x, _ in tqdm(images):
-#     print()
+# Training Loop
+for x, _ in tqdm(images):
+    print()
 
-test()
+
 
