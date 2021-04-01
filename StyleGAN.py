@@ -7,22 +7,6 @@ from tqdm.auto import tqdm
 import math
 from scipy.stats import truncnorm
 
-
-# LOADING DATA
-intel_image_transformation = transforms.Compose([
-    transforms.ToTensor(),
-    # transforms.Normalize((.5, .5, .5), (.5, .5, .5)),
-    # transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225)),
-    transforms.ConvertImageDtype(float),
-    transforms.Resize((128, 128))
-])
-
-glacier_images = datasets.ImageFolder('./data/glaciers', intel_image_transformation)
-building_images = datasets.ImageFolder('./data/buildings', intel_image_transformation)
-forest_images = datasets.ImageFolder('./data/forest', intel_image_transformation)
-
-images = torch.utils.data.DataLoader(glacier_images, batch_size=batch_size, shuffle=False, drop_last=False, num_workers=4)
-
 def display_image(images, num_display = 9, save_to_disk=False, save_dir='./output', filename="figure"):
     if images.dim() == 3: # single image
         plt.imshow(images.permute(1, 2, 0))
@@ -97,7 +81,7 @@ class InjectSecondaryNoise(nn.Module):
     def forward(self, conv_output):
         noise_shape = (conv_output.shape[0], 1, conv_output.shape[2], conv_output.shape[3])
 
-        noise = torch.randn(noise_shape)
+        noise = torch.randn(noise_shape).to('cuda')
 
         return conv_output + (self.weights * noise)
 
@@ -212,7 +196,7 @@ class StyleGAN(nn.Module):
         # calculate alphas
         alphas = calculate_alphas(discriminator_count, num_images_fade_in)
 
-        # forward pass
+        # forward pass https://pytorch.org/docs/master/generated/torch.nn.ModuleList.html
         w_noise = self.noise_mapping(z_noise)
 
         output = self.block_0(self.starting_constant, z_noise, do_upsample=False, alpha=alphas[0])
@@ -302,7 +286,7 @@ class Critic(nn.Module):
         return self.final_layers(out)
     
     def get_critic_loss(self, crit_fake_pred, crit_real_pred, epsilon, real_images, fake_images, discriminator_count, num_images_fade_in, c_lambda):
-        mixed_images = (real_images * epsilon) + (1 - epsilon) * fake_images
+        mixed_images = real_images * epsilon + (1 - epsilon) * fake_images
         mixed_image_scores = self.forward(mixed_images, discriminator_count, num_images_fade_in)
 
         gradient = torch.autograd.grad(
@@ -323,7 +307,7 @@ class Critic(nn.Module):
 
         # put it all together
 
-        return -(crit_real_pred - crit_fake_pred) + (c_lambda * penalty)
+        return -((crit_real_pred - crit_fake_pred).mean()) + (c_lambda * penalty)
 
 
 class MiniBatchStdDev(nn.Module):
@@ -371,32 +355,103 @@ class Debug(nn.Module):
         super().__init__()
     
     def forward(self, x):
-        print(x.shape)
+        print(x)
         return x
 
 # IMPORTANT CONSTANTS
 batch_size = 24
-num_images_fade_in=(800 * 1000)
+num_images_fade_in=(5 * 1000)
 c_lambda = 3
-noise_size=512
+noise_size = 512
 device = 'cuda'
 beta_1 = 0
 beta_2 = 0.99
 learning_rate = 0.00018
 
+num_epochs = 50
+critic_repeats = 8
+
+display_step = 50
+
 # Init Weights Function (Maybe Not Needed?)
-def init_weights(m):
-    if isinstance(m, nn.Conv2d):
-        torch.nn.init.normal_(m.weight, 0.0, 1.0)
+# def init_weights(m):
+#     if isinstance(m, nn.Conv2d):
+#         torch.nn.init.normal_(m.weight, 0.0, 1.0)
 
 # Initialize Generator
 gen = StyleGAN(z_size=noise_size).to(device)
+gen_opt = torch.optim.Adam(gen.parameters(), lr=learning_rate, betas=(beta_1, beta_2))
 
+# Initialize Critic
+critic = Critic().to(device)
+critic_opt = torch.optim.Adam(critic.parameters(), lr=learning_rate, betas=(beta_1, beta_2))
 
+# LOADING DATA
+intel_image_transformation = transforms.Compose([
+    transforms.ToTensor(),
+    # transforms.Normalize((.5, .5, .5), (.5, .5, .5)),
+    # transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225)),
+    transforms.ConvertImageDtype(float),
+    transforms.Resize((128, 128))
+])
+
+glacier_images = datasets.ImageFolder('./data/glaciers', intel_image_transformation)
+building_images = datasets.ImageFolder('./data/buildings', intel_image_transformation)
+forest_images = datasets.ImageFolder('./data/forest', intel_image_transformation)
+
+images = torch.utils.data.DataLoader(glacier_images, batch_size=batch_size, shuffle=False, drop_last=False, num_workers=4)
+
+# Create a constant set of noise vectors to show same image progression
+show_noise = get_truncated_noise(9, 512, 1).to(device)
 
 # Training Loop
-for x, _ in tqdm(images):
-    print()
+
+critic_image_count = 0
+step = 0
+for epoch in range(num_epochs):
+    for x, _ in tqdm(images):
+        current_batch_size = len(x)
+
+        for i in range(critic_repeats):
+            critic_opt.zero_grad()
+            fake_noise = get_truncated_noise(current_batch_size, noise_size, 1).to(device)
+
+            fake_images = gen.forward(fake_noise, critic_image_count, num_images_fade_in)
+
+            x = torch.nn.functional.interpolate(x, size=(fake_images.shape[2], fake_images.shape[3]), mode='bilinear').to(device, dtype=torch.float)
+
+            critic_fake_pred = critic.forward(fake_images, critic_image_count, num_images_fade_in)
+
+            critic_real_pred = critic.forward(x, critic_image_count, num_images_fade_in)
+            critic_image_count += current_batch_size
+
+            epsilon = torch.rand(len(x), 1, 1, 1, device=device, requires_grad=True)
+
+            loss = critic.get_critic_loss(critic_fake_pred, critic_real_pred, epsilon, x, fake_images, critic_image_count, num_images_fade_in, c_lambda)
+
+            loss.backward(retain_graph=True)
+            
+        
+        gen_opt.zero_grad()
+        more_fake_noise = get_truncated_noise(current_batch_size, noise_size, 1).to(device)
+        more_fake_images = gen(more_fake_noise, critic_image_count, num_images_fade_in)
+
+        critic_fake_pred = critic(more_fake_images, critic_image_count, num_images_fade_in)
+
+        gen_loss = get_generator_loss(critic_fake_pred)
+        gen_loss.backward()
+
+        gen_opt.step()
+
+        step += 1
+
+        if display_step > 0 and step % display_step == 0:
+            display_image(gen(show_noise, critic_image_count, num_images_fade_in), save_to_disk=True, filename="s-{}".format(step))
+
+
+
+
+
 
 
 
