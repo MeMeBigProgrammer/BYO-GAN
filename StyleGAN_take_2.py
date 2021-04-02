@@ -372,11 +372,6 @@ display_step = 50
 
 gen_weight_decay = 0.999
 
-# Init Weights Function (Maybe Not Needed?)
-# def init_weights(m):
-#     if isinstance(m, nn.Conv2d):
-#         torch.nn.init.normal_(m.weight, 0.0, 1.0)
-
 # Initialize Generator
 gen = StyleGAN(z_size=noise_size).to(device)
 gen_opt = torch.optim.Adam(gen.parameters(), lr=learning_rate, betas=(beta_1, beta_2), weight_decay=gen_weight_decay)
@@ -458,6 +453,10 @@ for epoch in range(num_epochs):
 
 
 
-
+# TODO
+# - Implement dynamic growth (take progression sizes)
+# - implement FID checking as a progressbar stat
+# - checkpointing every x iterations
+# - Doublecheck WGAN-GP implementation 
 
 
