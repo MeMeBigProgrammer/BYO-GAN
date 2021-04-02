@@ -266,22 +266,23 @@ class Critic(nn.Module):
 
         out = x
 
-        if alphas[0] != 0:
+        if out.shape[2] == 128 and out.shape[3] == 128:
             out = self.block_1(out, alpha=alphas[0])
         
-        if alphas[1] != 0:
+        if out.shape[2] == 64 and out.shape[3] == 64:
             out = self.block_2(out, alpha=alphas[1])
 
-        if alphas[2] != 0:
+        if out.shape[2] == 32 and out.shape[3] == 32:
             out = self.block_3(out, alpha=alphas[2])
         
-        if alphas[3] != 0:
+        if out.shape[2] == 16 and out.shape[2] == 16:
             out = self.block_4(out, alpha=alphas[3])
         
-        if alphas[4] != 0:
+        if out.shape[2] == 8 and out.shape[2] == 8:
             out = self.block_5(out, alpha=alphas[4])
         elif alphas[4] == 0:
             out = self.from_rgb(out)
+
 
         return self.final_layers(out)
     
@@ -337,17 +338,17 @@ class CriticBlock(nn.Module):
     
     def forward(self, x, alpha=None):
         if alpha is None:
-            out = self.from_rgb(x)
-            return self.downsample(self.main_block(out))
-        elif alpha > 0:
+            # out = self.from_rgb(x)
+            return self.downsample(self.main_block(x))
+        elif alpha >= 0:
 
             conv_out = self.downsample(self.main_block(self.from_rgb(x)))
 
             simple_downsample = self.from_rgb(self.downsample(x))
 
             return torch.lerp(simple_downsample, conv_out, alpha)
-        elif alpha == 0:
-            raise ValueError("this layer should not be activated with an alpha of 0!")
+        # elif alpha == 0:
+        #     raise ValueError("this layer should not be activated with an alpha of 0!")
 
 
 class Debug(nn.Module):
@@ -355,23 +356,25 @@ class Debug(nn.Module):
         super().__init__()
     
     def forward(self, x):
-        print(x)
+        # print(x.shape)
         return x
 
 # IMPORTANT CONSTANTS
 batch_size = 24
-num_images_fade_in=(5 * 1000)
+num_images_fade_in=(500 * 1000)
 c_lambda = 3
 noise_size = 512
 device = 'cuda'
 beta_1 = 0
 beta_2 = 0.99
-learning_rate = 0.00018
+learning_rate = 0.0002
 
 num_epochs = 50
 critic_repeats = 8
 
 display_step = 50
+
+gen_weight_decay = 0.999
 
 # Init Weights Function (Maybe Not Needed?)
 # def init_weights(m):
@@ -380,7 +383,7 @@ display_step = 50
 
 # Initialize Generator
 gen = StyleGAN(z_size=noise_size).to(device)
-gen_opt = torch.optim.Adam(gen.parameters(), lr=learning_rate, betas=(beta_1, beta_2))
+gen_opt = torch.optim.Adam(gen.parameters(), lr=learning_rate, betas=(beta_1, beta_2), weight_decay=gen_weight_decay)
 
 # Initialize Critic
 critic = Critic().to(device)
@@ -390,7 +393,7 @@ critic_opt = torch.optim.Adam(critic.parameters(), lr=learning_rate, betas=(beta
 intel_image_transformation = transforms.Compose([
     transforms.ToTensor(),
     # transforms.Normalize((.5, .5, .5), (.5, .5, .5)),
-    # transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225)),
+    transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225)),
     transforms.ConvertImageDtype(float),
     transforms.Resize((128, 128))
 ])
@@ -398,11 +401,12 @@ intel_image_transformation = transforms.Compose([
 glacier_images = datasets.ImageFolder('./data/glaciers', intel_image_transformation)
 building_images = datasets.ImageFolder('./data/buildings', intel_image_transformation)
 forest_images = datasets.ImageFolder('./data/forest', intel_image_transformation)
+anime_images = datasets.ImageFolder('./data/anime', intel_image_transformation)
 
-images = torch.utils.data.DataLoader(glacier_images, batch_size=batch_size, shuffle=False, drop_last=False, num_workers=4)
+images = torch.utils.data.DataLoader(anime_images, batch_size=batch_size, shuffle=False, drop_last=False, num_workers=4)
 
 # Create a constant set of noise vectors to show same image progression
-show_noise = get_truncated_noise(9, 512, 1).to(device)
+show_noise = get_truncated_noise(9, 512, 0.75).to(device)
 
 # Training Loop
 
@@ -414,7 +418,7 @@ for epoch in range(num_epochs):
 
         for i in range(critic_repeats):
             critic_opt.zero_grad()
-            fake_noise = get_truncated_noise(current_batch_size, noise_size, 1).to(device)
+            fake_noise = get_truncated_noise(current_batch_size, noise_size, 0.75).to(device)
 
             fake_images = gen.forward(fake_noise, critic_image_count, num_images_fade_in)
 
@@ -423,17 +427,18 @@ for epoch in range(num_epochs):
             critic_fake_pred = critic.forward(fake_images, critic_image_count, num_images_fade_in)
 
             critic_real_pred = critic.forward(x, critic_image_count, num_images_fade_in)
-            critic_image_count += current_batch_size
 
             epsilon = torch.rand(len(x), 1, 1, 1, device=device, requires_grad=True)
 
             loss = critic.get_critic_loss(critic_fake_pred, critic_real_pred, epsilon, x, fake_images, critic_image_count, num_images_fade_in, c_lambda)
 
             loss.backward(retain_graph=True)
+
+            critic_image_count += current_batch_size
             
         
         gen_opt.zero_grad()
-        more_fake_noise = get_truncated_noise(current_batch_size, noise_size, 1).to(device)
+        more_fake_noise = get_truncated_noise(current_batch_size, noise_size, 0.75).to(device)
         more_fake_images = gen(more_fake_noise, critic_image_count, num_images_fade_in)
 
         critic_fake_pred = critic(more_fake_images, critic_image_count, num_images_fade_in)
@@ -447,6 +452,7 @@ for epoch in range(num_epochs):
 
         if display_step > 0 and step % display_step == 0:
             display_image(gen(show_noise, critic_image_count, num_images_fade_in), save_to_disk=True, filename="s-{}".format(step))
+            display_image(x, save_to_disk=True, filename="s-{}".format(step+1))
 
 
 
