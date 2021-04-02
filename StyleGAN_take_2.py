@@ -7,13 +7,15 @@ from tqdm.auto import tqdm
 import math
 from scipy.stats import truncnorm
 
-def display_image(images, num_display = 9, save_to_disk=False, save_dir='./output', filename="figure"):
+def display_image(images, num_display = 9, save_to_disk=False, save_dir='./output', filename="figure", title="Images"):
     if images.dim() == 3: # single image
         plt.imshow(images.permute(1, 2, 0))
     else: # multiple images, show first {num_display} in grid
         image_grid = utils.make_grid(images.detach().cpu()[:num_display], nrow=int(math.sqrt(num_display)))
         plt.imshow(image_grid.permute(1, 2, 0).squeeze())
     
+    plt.title(title)
+
     if save_to_disk:
         plt.savefig('{0}/{1}.png'.format(save_dir, filename))
     else:
@@ -24,11 +26,11 @@ def get_truncated_noise(n_samples, z_dim, truncation):
     truncated_noise = truncnorm.rvs(-truncation, truncation, size=(n_samples, z_dim ))
     return torch.Tensor(truncated_noise)
 
-def calculate_alphas(discriminator_count, num_images_fade_in):
+def calculate_alphas(discriminator_count, im_milestone):
 
     alphas = [0 for x in range(6)] # Change range(x) to match number of alphas (# Blocks = # Alphas)
 
-    running_count = float(discriminator_count / num_images_fade_in) + 4
+    running_count = float(discriminator_count / im_milestone) + 4
     for index, val in enumerate(alphas):
         
         if running_count < 1.0:
@@ -48,7 +50,7 @@ def calculate_alphas(discriminator_count, num_images_fade_in):
 
 
 class MappingLayers(nn.Module):
-    def __init__(self, in_channels=512, hidden_channels=1024): # The dimensions should remain 1:1 for z -> w. 
+    def __init__(self, in_channels=512, hidden_channels=1024):
         super().__init__()
         self.layers = nn.Sequential(
             self.generate_mapping_block(in_channels, hidden_channels),
@@ -94,7 +96,8 @@ class AdaINBlock(nn.Module):
         self.y_scale = nn.Linear(noise_length, num_channels)
         self.y_bias = nn.Linear(noise_length, num_channels)
 
-        self.y_scale.weight.data.fill_(0)
+        # Initialization as outlined in Whitepaper
+        self.y_scale.weight.data.fill_(0) 
         self.y_bias.weight.data.fill_(0)
         self.y_scale.bias.data.fill_(1)
         self.y_bias.bias.data.fill_(0)
@@ -192,9 +195,9 @@ class StyleGAN(nn.Module):
 
         # Number of alphas: 6
     
-    def forward(self, z_noise, discriminator_count, num_images_fade_in):
+    def forward(self, z_noise, discriminator_count, im_milestone):
         # calculate alphas
-        alphas = calculate_alphas(discriminator_count, num_images_fade_in)
+        alphas = calculate_alphas(discriminator_count, im_milestone)
 
         # forward pass https://pytorch.org/docs/master/generated/torch.nn.ModuleList.html
         w_noise = self.noise_mapping(z_noise)
@@ -261,8 +264,8 @@ class Critic(nn.Module):
 
         self.from_rgb = nn.Conv2d(image_channels, 512, kernel_size=1)
     
-    def forward(self, x, discriminator_count, num_images_fade_in):
-        alphas = calculate_alphas(discriminator_count, num_images_fade_in)[::-1]
+    def forward(self, x, discriminator_count, im_milestone):
+        alphas = calculate_alphas(discriminator_count, im_milestone)[::-1]
 
         out = x
 
@@ -286,9 +289,9 @@ class Critic(nn.Module):
 
         return self.final_layers(out)
     
-    def get_critic_loss(self, crit_fake_pred, crit_real_pred, epsilon, real_images, fake_images, discriminator_count, num_images_fade_in, c_lambda):
+    def get_critic_loss(self, crit_fake_pred, crit_real_pred, epsilon, real_images, fake_images, discriminator_count, im_milestone, c_lambda):
         mixed_images = real_images * epsilon + (1 - epsilon) * fake_images
-        mixed_image_scores = self.forward(mixed_images, discriminator_count, num_images_fade_in)
+        mixed_image_scores = self.forward(mixed_images, discriminator_count, im_milestone)
 
         gradient = torch.autograd.grad(
             inputs=mixed_images,
@@ -308,8 +311,11 @@ class Critic(nn.Module):
 
         # put it all together
 
-        return -((crit_real_pred - crit_fake_pred).mean()) + (c_lambda * penalty)
+        diff = -(crit_real_pred.mean() - crit_fake_pred.mean())
 
+        gp = c_lambda * penalty
+
+        return diff + gp
 
 class MiniBatchStdDev(nn.Module):
     def __init__(self):
@@ -356,17 +362,17 @@ class Debug(nn.Module):
         return x
 
 # IMPORTANT CONSTANTS
-batch_size = 24
-num_images_fade_in=(500 * 1000)
-c_lambda = 1
+batch_size = 24 # Image batch size; Depends on VRAM available
+im_milestone=(50 * 1000) # Progressive Growth block fade in constant; Each progression (fade-in/stabilization period) lasts X images 
+c_lambda = 10 # WGAN-GP Gradient Penalty coefficient
 noise_size = 512
 device = 'cuda'
-beta_1 = 0
-beta_2 = 0.99
-learning_rate = 0.0002
+beta_1 = 0 # For Adam optimizer
+beta_2 = 0.99 # For Adam optimizer
+learning_rate = 0.0001
 
 num_epochs = 50
-critic_repeats = 8
+critic_repeats = 1 # per Kerras et al
 
 display_step = 50
 
@@ -414,28 +420,30 @@ for epoch in range(num_epochs):
             critic_opt.zero_grad()
             fake_noise = get_truncated_noise(current_batch_size, noise_size, 0.75).to(device)
 
-            fake_images = gen.forward(fake_noise, critic_image_count, num_images_fade_in)
+            fake_images = gen.forward(fake_noise, critic_image_count, im_milestone)
 
             x = torch.nn.functional.interpolate(x, size=(fake_images.shape[2], fake_images.shape[3]), mode='bilinear').to(device, dtype=torch.float)
 
-            critic_fake_pred = critic.forward(fake_images.detach(), critic_image_count, num_images_fade_in)
+            critic_fake_pred = critic.forward(fake_images.detach(), critic_image_count, im_milestone)
 
-            critic_real_pred = critic.forward(x, critic_image_count, num_images_fade_in)
+            critic_real_pred = critic.forward(x, critic_image_count, im_milestone)
 
             epsilon = torch.rand(len(x), 1, 1, 1, device=device, requires_grad=True)
 
-            loss = critic.get_critic_loss(critic_fake_pred, critic_real_pred, epsilon, x, fake_images, critic_image_count, num_images_fade_in, c_lambda)
+            loss = critic.get_critic_loss(critic_fake_pred, critic_real_pred, epsilon, x, fake_images, critic_image_count, im_milestone, c_lambda)
 
             loss.backward(retain_graph=True)
+
+            critic_opt.step()
 
             critic_image_count += current_batch_size
             
         
         gen_opt.zero_grad()
         more_fake_noise = get_truncated_noise(current_batch_size, noise_size, 0.75).to(device)
-        more_fake_images = gen(more_fake_noise, critic_image_count, num_images_fade_in)
+        more_fake_images = gen(more_fake_noise, critic_image_count, im_milestone)
 
-        critic_fake_pred = critic(more_fake_images, critic_image_count, num_images_fade_in)
+        critic_fake_pred = critic(more_fake_images, critic_image_count, im_milestone)
 
         gen_loss = get_generator_loss(critic_fake_pred)
         gen_loss.backward()
@@ -445,9 +453,12 @@ for epoch in range(num_epochs):
         step += 1
 
         if display_step > 0 and step % display_step == 0:
-            display_image(gen(show_noise, critic_image_count, num_images_fade_in), save_to_disk=True, filename="s-{}".format(step))
+            examples = gen(show_noise, critic_image_count, im_milestone)
+            display_image(torch.clamp(examples, 0, 1), save_to_disk=True, filename="s-{}".format(step), title="Iteration {}".format(step))
 
-        pbar.set_description("gen_loss: {0}  critic_loss: {1}".format(gen_loss, loss), refresh=True)
+
+        pbar_description = "gen_loss: {0}  critic_loss: {1}  step: {2}".format(round(gen_loss.item(),5), round(loss.item(),5), step)
+        pbar.set_description(pbar_description, refresh=True)
 
 
 
@@ -457,6 +468,9 @@ for epoch in range(num_epochs):
 # - Implement dynamic growth (take progression sizes)
 # - implement FID checking as a progressbar stat
 # - checkpointing every x iterations
-# - Doublecheck WGAN-GP implementation 
+# - Pbar format
+# - code cleanup
+
+# Make Critic block image in and out size a property
 
 
