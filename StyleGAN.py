@@ -16,8 +16,7 @@ def display_image(images, num_display=9, save_to_disk=False, save_dir='./output'
     else:  # multiple images, show first {num_display} in grid
         image_grid = utils.make_grid(images.detach().cpu(
         )[:num_display], nrow=int(math.sqrt(num_display)))
-        plt.imshow(image_grid.mul_(255).add_(0.5).clamp_(
-            0, 255).permute(1, 2, 0).squeeze())
+        plt.imshow(image_grid.permute(1, 2, 0).squeeze())
 
     plt.title(title)
 
@@ -521,9 +520,8 @@ def memory_check():
             pass
 
 # TODO
-# - Implement dynamic growth (take progression sizes)
-# - implement FID checking as a progressbar stat
-# - code cleanup
+# - redo all StyleGAN components to be more dynamic
+# - allow for multiple Noise inputs, allow for more than two using a dict
 
 
 if __name__ == "__main__":

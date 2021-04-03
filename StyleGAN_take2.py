@@ -103,7 +103,7 @@ class AdaINBlock(nn.Module):
         self.lin.bias.data.fill_(0)
 
     def forward(self, image, noise):
-        y_style = self.lin(noise).view(-1, 2, self.num_channels)
+        y_style = self.lin(noise).view(-1, 2, self.num_channels, 1, 1)
         inst_norm = self.instance_norm(image)
         return inst_norm * y_style[:, 0] + y_style[:, 1]
 
@@ -370,7 +370,7 @@ num_epochs = 500
 display_step = 50
 checkpoint_step = 1000
 
-image_progression = [4, 8, 16, 32, 64, 128, 256]
+image_progression = [4, 8, 16, 32, 64, 128]
 
 # Create a constant set of noise vectors to show same image progression.
 show_noise = get_truncated_noise(4, 512, 0.75).to(device)
@@ -394,7 +394,7 @@ forest_images = datasets.ImageFolder(
 anime_images = datasets.ImageFolder('./data/anime', transformation)
 
 images = torch.utils.data.DataLoader(
-    anime_images, batch_size=batch_size, shuffle=True, drop_last=False, num_workers=3)
+    building_images, batch_size=batch_size, shuffle=True, drop_last=False, num_workers=3)
 
 # Training Loop
 
