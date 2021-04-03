@@ -16,7 +16,8 @@ def display_image(images, num_display=9, save_to_disk=False, save_dir='./output'
     else:  # multiple images, show first {num_display} in grid
         image_grid = utils.make_grid(images.detach().cpu(
         )[:num_display], nrow=int(math.sqrt(num_display)))
-        plt.imshow(image_grid.permute(1, 2, 0).squeeze())
+        plt.imshow(image_grid.mul_(255).add_(0.5).clamp_(
+            0, 255).permute(1, 2, 0).squeeze())
 
     plt.title(title)
 
@@ -77,7 +78,7 @@ class InjectSecondaryNoise(nn.Module):
     def __init__(self, num_channels):
         super().__init__()
         self.weights = nn.Parameter(
-            torch.randn((1, num_channels, 1, 1))
+            torch.ones((1, num_channels, 1, 1))
         )
 
     def forward(self, conv_output):
@@ -353,9 +354,9 @@ class Debug(nn.Module):
 
 
 # IMPORTANT CONSTANTS
-batch_size = 36  # Image batch size; Depends on VRAM available
+batch_size = 24  # Image batch size; Depends on VRAM available
 # Progressive Growth block fade in constant; Each progression (fade-in/stabilization period) lasts X images
-im_milestone = 60 * 1000
+im_milestone = 200 * 1000
 c_lambda = 10  # WGAN-GP Gradient Penalty coefficient
 noise_size = 512
 device = 'cuda'
@@ -365,21 +366,23 @@ learning_rate = 0.0001
 critic_repeats = 1  # per Kerras et al
 gen_weight_decay = 0.999
 
-num_epochs = 50
+num_epochs = 500
 display_step = 50
+checkpoint_step = 1000
 
-image_progression = [4, 8, 16, 32, 64, 128]
+image_progression = [4, 8, 16, 32, 64, 128, 256]
 
 # Create a constant set of noise vectors to show same image progression.
 show_noise = get_truncated_noise(9, 512, 0.75).to(device)
 
 # LOADING DATA
 transformation = transforms.Compose([
+    transforms.Resize((image_progression[-1], image_progression[-1])),
+    transforms.CenterCrop((image_progression[-1], image_progression[-1])),
+    transforms.RandomHorizontalFlip(),
     transforms.ToTensor(),
-    # transforms.Normalize((.5, .5, .5), (.5, .5, .5)),
-    transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225)),
+    transforms.Normalize((.5, .5, .5), (.5, .5, .5)),
     transforms.ConvertImageDtype(float),
-    transforms.Resize((image_progression[-1], image_progression[-1]))
 ])
 
 glacier_images = datasets.ImageFolder(
@@ -391,7 +394,7 @@ forest_images = datasets.ImageFolder(
 anime_images = datasets.ImageFolder('./data/anime', transformation)
 
 images = torch.utils.data.DataLoader(
-    glacier_images, batch_size=batch_size, shuffle=False, drop_last=False, num_workers=4)
+    anime_images, batch_size=batch_size, shuffle=True, drop_last=False, num_workers=3)
 
 # Training Loop
 
@@ -415,6 +418,9 @@ def train():
     step = 0
     g_loss_history = []
     c_loss_history = []
+
+    avg_g_loss = 0
+    avg_c_loss = 0
 
     for epoch in range(num_epochs):
 
@@ -477,18 +483,23 @@ def train():
                 display_image(torch.clamp(examples, 0, 1), save_to_disk=True,
                               filename="s-{}".format(step), title="Iteration {}".format(step))
 
+                avg_c_loss = sum(c_loss_history[-display_step:]) / display_step
+                avg_g_loss = sum(g_loss_history[-display_step:]) / display_step
+
             pbar_description = "gen_loss: {0}  critic_loss: {1}  step: {2}".format(
-                round(gen_loss.item(), 5), round(loss.item(), 5), step)
+                round(avg_g_loss, 5), round(avg_c_loss, 5), step)
             pbar.set_description(pbar_description, refresh=True)
 
-        # Backup Models
-        torch.save({
-            'gen': gen.state_dict(),
-            'critic': critic.state_dict(),
-            'epoch': epoch,
-            'critic_image_count': critic_image_count,
-            'im_milestone': im_milestone
-        }, f'./checkpoints/chk-{epoch}.pth')
+            if checkpoint_step > 0 and step % checkpoint_step == 0:
+
+                # Backup Models
+                torch.save({
+                    'gen': gen.state_dict(),
+                    'critic': critic.state_dict(),
+                    'epoch': epoch,
+                    'critic_image_count': critic_image_count,
+                    'im_milestone': im_milestone
+                }, f'./checkpoints/chk-{step}.pth')
 
 
 def test():
@@ -516,4 +527,6 @@ def memory_check():
 
 
 if __name__ == "__main__":
+    if torch.device('cuda' if torch.cuda.is_available() else 'cpu').type == 'cuda':
+        print(torch.cuda.get_device_name(0))
     train()
