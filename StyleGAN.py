@@ -7,6 +7,7 @@ from tqdm.auto import tqdm
 import math
 from scipy.stats import truncnorm
 import gc
+from datetime import datetime
 
 
 def display_image(images, num_display=9, save_to_disk=False, save_dir='./output', filename="figure", title="Images"):
@@ -352,9 +353,9 @@ class Debug(nn.Module):
 
 
 # IMPORTANT CONSTANTS
-batch_size = 24  # Image batch size; Depends on VRAM available
+batch_size = 36  # Image batch size; Depends on VRAM available
 # Progressive Growth block fade in constant; Each progression (fade-in/stabilization period) lasts X images
-im_milestone = 50 * 1000
+im_milestone = 60 * 1000
 c_lambda = 10  # WGAN-GP Gradient Penalty coefficient
 noise_size = 512
 device = 'cuda'
@@ -367,7 +368,7 @@ gen_weight_decay = 0.999
 num_epochs = 50
 display_step = 50
 
-image_progression = [4, 8, 16, 32, 64, 128, 256]
+image_progression = [4, 8, 16, 32, 64, 128]
 
 # Create a constant set of noise vectors to show same image progression.
 show_noise = get_truncated_noise(9, 512, 0.75).to(device)
@@ -378,7 +379,7 @@ transformation = transforms.Compose([
     # transforms.Normalize((.5, .5, .5), (.5, .5, .5)),
     transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225)),
     transforms.ConvertImageDtype(float),
-    transforms.Resize((256, 256))
+    transforms.Resize((image_progression[-1], image_progression[-1]))
 ])
 
 glacier_images = datasets.ImageFolder(
@@ -390,7 +391,7 @@ forest_images = datasets.ImageFolder(
 anime_images = datasets.ImageFolder('./data/anime', transformation)
 
 images = torch.utils.data.DataLoader(
-    anime_images, batch_size=batch_size, shuffle=False, drop_last=False, num_workers=4)
+    glacier_images, batch_size=batch_size, shuffle=False, drop_last=False, num_workers=4)
 
 # Training Loop
 
@@ -421,7 +422,6 @@ def train():
 
         for x, _ in pbar:
             current_batch_size = len(x)
-            x = x.to(device)
 
             for i in range(critic_repeats):
                 critic_opt.zero_grad()
