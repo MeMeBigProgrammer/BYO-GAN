@@ -399,7 +399,10 @@ def train():
 
     # Initialize Generator
     gen = StyleGAN(image_progression, z_size=noise_size).to(device)
-    gen_opt = torch.optim.Adam(gen.parameters(), lr=learning_rate, betas=(
+    gen_opt = torch.optim.Adam([
+        {'params': gen.noise_mapping.parameters(), 'lr': (learning_rate * 0.01)},
+        {'params': gen.starting_constant},
+        {'params': gen.gan_blocks.parameters()}], lr=learning_rate, betas=(
         beta_1, beta_2), weight_decay=gen_weight_decay)
 
     # Initialize Critic
