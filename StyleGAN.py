@@ -10,7 +10,7 @@ import gc
 from datetime import datetime
 
 
-def display_image(images, num_display=9, save_to_disk=False, save_dir='./output', filename="figure", title="Images"):
+def display_image(images, num_display=4, save_to_disk=False, save_dir='./output', filename="figure", title="Images"):
     if images.dim() == 3:  # single image
         plt.imshow(images.permute(1, 2, 0))
     else:  # multiple images, show first {num_display} in grid
@@ -93,18 +93,19 @@ class AdaINBlock(nn.Module):
     def __init__(self, noise_length, num_channels):
         super().__init__()
 
+        self.num_channels = num_channels
+
         self.instance_norm = nn.InstanceNorm2d(num_channels)
-        self.y_scale = nn.Linear(noise_length, num_channels)
-        self.y_bias = nn.Linear(noise_length, num_channels)
+        self.lin = nn.Linear(noise_length, 2 * num_channels)
 
         # Initialization
-        self.y_scale.weight.data.fill_(0)
-        self.y_bias.weight.data.fill_(0)
-        self.y_scale.bias.data.fill_(1)
-        self.y_bias.bias.data.fill_(0)
+        self.lin.weight.data.fill_(1)
+        self.lin.bias.data.fill_(0)
 
     def forward(self, image, noise):
-        return (self.instance_norm(image) * self.y_scale(noise)[:, :, None, None]) + self.y_bias(noise)[:, :, None, None]
+        y_style = self.lin(noise).view(-1, 2, self.num_channels, 1, 1)
+        inst_norm = self.instance_norm(image)
+        return inst_norm * y_style[:, 0] + y_style[:, 1]
 
 
 class StyleGANBlock(nn.Module):
@@ -369,10 +370,10 @@ num_epochs = 500
 display_step = 50
 checkpoint_step = 1000
 
-image_progression = [4, 8, 16, 32, 64, 128, 256]
+image_progression = [4, 8, 16, 32, 64, 128]
 
 # Create a constant set of noise vectors to show same image progression.
-show_noise = get_truncated_noise(9, 512, 0.75).to(device)
+show_noise = get_truncated_noise(4, 512, 0.75).to(device)
 
 # LOADING DATA
 transformation = transforms.Compose([
@@ -384,13 +385,15 @@ transformation = transforms.Compose([
     transforms.ConvertImageDtype(float),
 ])
 
+path_root = "/media/simba/407150955DB167D7/data"
+
 glacier_images = datasets.ImageFolder(
-    './data/glaciers', transformation)
+    path_root + '/glaciers', transformation)
 building_images = datasets.ImageFolder(
-    './data/buildings', transformation)
+    path_root + '/buildings', transformation)
 forest_images = datasets.ImageFolder(
-    './data/forest', transformation)
-anime_images = datasets.ImageFolder('./data/anime', transformation)
+    path_root + '/forest', transformation)
+anime_images = datasets.ImageFolder(path_root + '/anime', transformation)
 
 images = torch.utils.data.DataLoader(
     anime_images, batch_size=batch_size, shuffle=True, drop_last=False, num_workers=3)
@@ -520,8 +523,9 @@ def memory_check():
             pass
 
 # TODO
-# - redo all StyleGAN components to be more dynamic
-# - allow for multiple Noise inputs, allow for more than two using a dict
+# - Implement dynamic growth (take progression sizes)
+# - implement FID checking as a progressbar stat
+# - code cleanup
 
 
 if __name__ == "__main__":
