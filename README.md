@@ -1,6 +1,6 @@
 # BYO-GAN
 
-Still a work in progress...
+**A Work in Progress!!!!!**
 
 As a part of my independent study for Junior year, my final project was to recreate StyleGan in Python using Pytorch. I used some notes from a Coursera course I took and the original whitepapers. I'm not adding anything new. I'm simply trying to gain a better understanding of how StyleGan works by coding it myself.
 
