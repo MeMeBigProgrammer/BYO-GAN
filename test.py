@@ -7,8 +7,6 @@ import math
 # https://github.com/SiskonEmilia/StyleGAN-PyTorch/blob/master/train.py
 # https://github.com/lernapparat/lernapparat/blob/master/style_gan/pytorch_style_gan.ipynb
 
-a = torch.arange(24).view(6, 4)
+m = nn.Parameter(torch.ones(1, 512, 4, 4))
 
-b = a.view((-1, 2, 2))
-
-print(a, '\n\n', b)
+print(m(4))
