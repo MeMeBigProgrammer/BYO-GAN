@@ -24,6 +24,7 @@ TODOs:
 - Equalized Learning Rate
 - Dynamically create channel progression
 - Allow for PixelWise normalization after each GAN Block 
+- Device specification
 """
 
 
@@ -33,12 +34,6 @@ class InjectSecondaryNoise(nn.Module):
         self.weights = nn.Parameter(torch.ones((1, channels, 1, 1)))
 
     def forward(self, conv_output, noise):
-        # noise_shape = (
-        #     conv_output.shape[0],
-        #     1,
-        #     conv_output.shape[2],
-        #     conv_output.shape[3],
-        # )
 
         return conv_output + (self.weights * noise)
 
@@ -65,11 +60,13 @@ class StyleConvBlock(nn.Module):
         self.conv = nn.Conv2d(in_chan, out_chan, kernel_size, kernel_size=3, padding=1)
         self.inject_style = InjectSecondaryNoise(out_chan)
         self.adain = AdaINBlock(out_chan)
+        self.activation = nn.LeakyReLU(negative_slope=0.2)
 
     def forward(self, x, w_noise, style):
         out = self.conv(x)
         out = self.inject_style(out, style)
-        return self.adain(out, w_noise)
+        out = self.adain(out, w_noise)
+        return self.activation(out)
 
 
 class StyleGanBlock(nn.Module):
@@ -112,44 +109,32 @@ class StyleGanBlock(nn.Module):
 
 
 class MappingLayers(nn.Module):
-    def __init__(self, in_channels=512, hidden_channels=1024):
+    def __init__(self, channels=512):
         super().__init__()
         self.layers = nn.Sequential(
-            self.generate_mapping_block(in_channels, hidden_channels),
-            self.generate_mapping_block(hidden_channels, hidden_channels),
-            self.generate_mapping_block(hidden_channels, hidden_channels),
-            self.generate_mapping_block(hidden_channels, hidden_channels),
-            self.generate_mapping_block(hidden_channels, hidden_channels),
-            self.generate_mapping_block(hidden_channels, hidden_channels),
-            self.generate_mapping_block(hidden_channels, hidden_channels),
-            nn.Linear(hidden_channels, in_channels),
+            self.generate_mapping_block(channels),
+            self.generate_mapping_block(channels),
+            self.generate_mapping_block(channels),
+            self.generate_mapping_block(channels),
+            self.generate_mapping_block(channels),
+            self.generate_mapping_block(channels),
+            self.generate_mapping_block(channels),
+            self.generate_mapping_block(channels),
         )
 
-    def generate_mapping_block(self, in_chan: int, out_chan: int):
-        return nn.Sequential(nn.Linear(in_chan, out_chan), nn.ReLU())
+    def generate_mapping_block(self, channels: int):
+        return nn.Sequential(nn.Linear(channels, channels), nn.LeakyReLU(0.2))
 
     def forward(self, input):
         return self.layers(input)
-
-
-class Critic(nn.Module):
-    def __init__(self):
-        super().__init__()
-
-    def forward(self):
-        print()
 
 
 class Generator(nn.Module):
     def __init__(self):
         super().__init__()
 
-        """
-        We need: Channel progression
-        list of Conv Blocks
-        list of RGB conversions
+        self.to_w_noise = MappingLayers()
 
-        """
         self.gen_blocks = nn.ModuleList(
             [
                 StyleGanBlock(512, 512, is_initial=True, does_upsample=False),
@@ -163,7 +148,7 @@ class Generator(nn.Module):
             ]
         )
 
-        self.to_rgb = nn.ModuleList(
+        self.to_rgbs = nn.ModuleList(
             nn.Conv2d(512, 3, kernel_size=1),
             nn.Conv2d(512, 3, kernel_size=1),
             nn.Conv2d(512, 3, kernel_size=1),
@@ -173,6 +158,32 @@ class Generator(nn.Module):
             nn.Conv2d(32, 3, kernel_size=1),
             nn.Conv2d(16, 3, kernel_size=1),
         )
+
+    def forward(self, z_noise, style=None, steps=1, alpha=None):
+        w_noise = self.to_w_noise(z_noise)
+
+        out = None
+
+        if style is None:
+            style = None
+            # TODO implement this:
+            # noise_shape = (
+            #     conv_output.shape[0],
+            #     1,
+            #     conv_output.shape[2],
+            #     conv_output.shape[3],
+            # )
+
+        for index, (to_rgb, gen_block) in enumerate(zip(self.to_rgbs, self.gen_blocks)):
+            # Upsample
+            out = gen_block.forward(None, w_noise, style)
+
+            # mix and return?
+
+
+class Critic(nn.Module):
+    def __init__(self):
+        super().__init__()
 
     def forward(self):
         print()
