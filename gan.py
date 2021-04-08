@@ -25,6 +25,7 @@ TODOs:
 - Dynamically create channel progression
 - Allow for PixelWise normalization after each GAN Block 
 - Device specification
+- multiple latent noise inputs
 """
 
 
@@ -33,7 +34,16 @@ class InjectSecondaryNoise(nn.Module):
         super().__init__()
         self.weights = nn.Parameter(torch.ones((1, channels, 1, 1)))
 
-    def forward(self, conv_output, noise):
+    def forward(self, conv_output, noise=None):
+        if noise = None:
+            noise_shape = (
+                conv_output.shape[0],
+                1,
+                conv_output.shape[2],
+                conv_output.shape[3],
+            )
+            noise = torch.randn(noise_shape)
+
 
         return conv_output + (self.weights * noise)
 
@@ -58,14 +68,14 @@ class StyleConvBlock(nn.Module):
         super().__init__()
 
         self.conv = nn.Conv2d(in_chan, out_chan, kernel_size, kernel_size=3, padding=1)
-        self.inject_style = InjectSecondaryNoise(out_chan)
+        self.inject_noise = InjectSecondaryNoise(out_chan)
         self.adain = AdaINBlock(out_chan)
         self.activation = nn.LeakyReLU(negative_slope=0.2)
 
-    def forward(self, x, w_noise, style):
+    def forward(self, x, style, noise=None):
         out = self.conv(x)
-        out = self.inject_style(out, style)
-        out = self.adain(out, w_noise)
+        out = self.inject_noise(out, noise=noise)
+        out = self.adain(out, style)
         return self.activation(out)
 
 
@@ -91,7 +101,7 @@ class StyleGanBlock(nn.Module):
 
         self.conv_2 = StyleConvBlock(out_chan, out_chan)
 
-    def forward(self, x, w_noise, style, batch_size):
+    def forward(self, x, style, batch_size, noise=None):
         if not self.is_initial and x is None:
             raise ValueError(
                 "If this is not the starting block, you will need input for the convolution."
@@ -103,9 +113,9 @@ class StyleGanBlock(nn.Module):
         if self.is_initial:
             out = self.conv_1.repeat(batch_size, 1, 1, 1)
         else:
-            out = self.conv_1(x, w_noise, style)
+            out = self.conv_1(x, style, noise)
 
-        out = self.conv_2(out, w_noise, style)
+        out = self.conv_2(out, style, noise)
 
 
 class MappingLayers(nn.Module):
@@ -123,7 +133,7 @@ class MappingLayers(nn.Module):
         )
 
     def generate_mapping_block(self, channels: int):
-        return nn.Sequential(nn.Linear(channels, channels), nn.LeakyReLU(0.2))
+        return nn.Sequential(nn.Linear(channels, channels), nn.LeakyReLU(negative_slope=0.2))
 
     def forward(self, input):
         return self.layers(input)
@@ -159,26 +169,29 @@ class Generator(nn.Module):
             nn.Conv2d(16, 3, kernel_size=1),
         )
 
-    def forward(self, z_noise, style=None, steps=1, alpha=None):
-        w_noise = self.to_w_noise(z_noise)
+    def forward(self, z_noise, noise=None, steps=1, alpha=None):
+        style = self.to_w_noise(z_noise)
 
         out = None
 
-        if style is None:
-            style = None
-            # TODO implement this:
-            # noise_shape = (
-            #     conv_output.shape[0],
-            #     1,
-            #     conv_output.shape[2],
-            #     conv_output.shape[3],
-            # )
-
         for index, (to_rgb, gen_block) in enumerate(zip(self.to_rgbs, self.gen_blocks)):
-            # Upsample
-            out = gen_block.forward(None, w_noise, style)
 
-            # mix and return?
+            previous = out
+
+            out = gen_block.forward(out, style, noise)
+
+            if (index + 1) >= steps: # final step
+                if alpha is not None and index > 0: # mix final image and return
+                    
+                    # clamp alpha to 0 -> 1, just in case
+                    alpha = min(1.0, max(0.0, alpha))
+
+                    small_image_upsample = to_rgbs[index - 1](previous)
+                    large_image = to_rgb(out)
+
+                    return torch.lerp(small_image_upsample, large_image, alpha)
+                else: # means we aren't fading in a step.
+                    return to_rgb(out)
 
 
 class Critic(nn.Module):
@@ -188,6 +201,9 @@ class Critic(nn.Module):
     def forward(self):
         print()
 
+def train():
+    print("Hello There!")
+    gen = Generator()
 
 if __name__ == "__main__":
     if torch.device("cuda" if torch.cuda.is_available() else "cpu").type == "cuda":
