@@ -20,10 +20,10 @@ Assumptions:
 2. Noise is ALWAYS 512.
 
 TODOs:
-- Specific runtime initializations 
-- Equalized Learning Rate
+- Specific runtime initializations* 
+- Allow for PixelWise normalization after each GAN Block*
+- Equalized Learning rate* 
 - Dynamically create channel progression
-- Allow for PixelWise normalization after each GAN Block 
 - Device specification
 - multiple latent noise inputs
 """
@@ -183,16 +183,25 @@ class Generator(nn.Module):
             if (index + 1) >= steps: # final step
                 if alpha is not None and index > 0: # mix final image and return
                     
-                    # clamp alpha to 0 -> 1, just in case
+                    # clamp alpha to 0 -> 1
                     alpha = min(1.0, max(0.0, alpha))
 
                     small_image_upsample = to_rgbs[index - 1](previous)
                     large_image = to_rgb(out)
 
                     return torch.lerp(small_image_upsample, large_image, alpha)
-                else: # means we aren't fading in a step.
+                else: # No fad in.
                     return to_rgb(out)
 
+class CriticBlock(nn.Module):
+    def __init__(self, in_chan, out_chan, is_final_layer=False, downsample=True):
+        super().__init__()
+
+        # 2 Conv layers
+
+
+    def forward(self):
+        print()
 
 class Critic(nn.Module):
     def __init__(self):
@@ -208,3 +217,5 @@ def train():
 if __name__ == "__main__":
     if torch.device("cuda" if torch.cuda.is_available() else "cpu").type == "cuda":
         print(torch.cuda.get_device_name(0))
+    
+    train()
