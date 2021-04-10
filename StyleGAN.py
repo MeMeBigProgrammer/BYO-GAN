@@ -624,17 +624,18 @@ def test():
     for i in range(100):
         fake = gen.forward(fake_noise, i, 10)
         end = critic.forward(fake.detach(), i, 10)
+        print(end)
 
 
-def memory_check():
-    for obj in gc.get_objects():
-        try:
-            if torch.is_tensor(obj) or (
-                hasattr(obj, "data") and torch.is_tensor(obj.data)
-            ):
-                print(type(obj), obj.size())
-        except:
-            pass
+# def memory_check():
+#     for obj in gc.get_objects():
+#         try:
+#             if torch.is_tensor(obj) or (
+#                 hasattr(obj, "data") and torch.is_tensor(obj.data)
+#             ):
+#                 print(type(obj), obj.size())
+#         except:
+#             pass
 
 
 # TODO

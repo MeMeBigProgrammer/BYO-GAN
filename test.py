@@ -7,6 +7,8 @@ import math
 # https://github.com/SiskonEmilia/StyleGAN-PyTorch/blob/master/train.py
 # https://github.com/lernapparat/lernapparat/blob/master/style_gan/pytorch_style_gan.ipynb
 
-m = nn.Parameter(torch.ones(1, 512, 4, 4))
+a = torch.zeros((4, 3, 2, 2))
 
-print(m(4))
+b = a + 1e-8
+
+print(a, b)
