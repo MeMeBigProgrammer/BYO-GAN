@@ -3,3 +3,4 @@ data/*/**
 output/*
 .vscode/
 checkpoints/**
+test.py
