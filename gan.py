@@ -6,6 +6,7 @@ import torchvision
 import gc
 import math
 from torch import nn
+import torch.nn.functional as F
 from torchvision import datasets, transforms, utils
 import matplotlib.pyplot as plt
 from tqdm.auto import tqdm
@@ -20,9 +21,9 @@ Assumptions:
 2. Noise is ALWAYS 512.
 
 TODOs:
-- Specific runtime initializations* 
+- Specific runtime initializations*
 - Allow for PixelWise normalization after each GAN Block*
-- Equalized Learning rate* 
+- Equalized Learning rate*
 - Dynamically create channel progression
 - Device specification
 - multiple latent noise inputs
@@ -110,7 +111,7 @@ class StyleGanBlock(nn.Module):
         else:
             out = self.conv_1(x, style, noise)
 
-        out = self.conv_2(out, style, noise)
+        return self.conv_2(out, style, noise)
 
 
 class MappingLayers(nn.Module):
@@ -177,7 +178,7 @@ class Generator(nn.Module):
 
             previous = out
 
-            out = gen_block.forward(out, style, noise)
+            out = gen_block.forward(out, style, len(z_noise), noise=noise)
 
             if (index + 1) >= steps:  # final step
                 if alpha is not None and index > 0:  # mix final image and return
@@ -194,47 +195,38 @@ class Generator(nn.Module):
 
 
 class CriticBlock(nn.Module):
-    def __init__(self, in_chan, out_chan, is_final_layer=False, downsample=True):
+    def __init__(self, in_chan, out_chan, is_final_layer=False):
         super().__init__()
 
         self.is_final_layer = is_final_layer
-        self.downsample = downsample
 
         if is_final_layer:
-            self.conv1 = nn.Sequential(
-                nn.Conv2d(in_chan, out_chan, kernel_size=3, padding=1),
+            self.conv_1 = nn.Sequential(
+                MiniBatchStdDev(),
+                nn.Conv2d(in_chan + 1, out_chan, kernel_size=3, padding=1),
                 nn.LeakyReLU(0.2),
             )
+
+            self.conv_2 = nn.Sequential(
+                nn.Conv2d(out_chan, out_chan, kernel_size=4),
+                nn.LeakyReLU(0.2),
+                nn.Flatten(),
+                nn.Linear(out_chan, 1),
+            )
         else:
-            self.conv1 = nn.Sequential(
-                MiniBatchStdDev(),
+            self.conv_1 = nn.Sequential(
                 nn.Conv2d(in_chan, out_chan, kernel_size=3, padding=1),
                 nn.LeakyReLU(0.2),
             )
 
-        if downsample:
-            self.conv2 = nn.Sequential(
+            self.conv_2 = nn.Sequential(
                 nn.Conv2d(out_chan, out_chan, kernel_size=3, padding=1),
                 nn.AvgPool2d(2),
                 nn.LeakyReLU(0.2),
             )
-        else:
-            if is_final_layer:
-                self.conv2 = nn.Sequential(
-                    nn.Conv2d(out_chan, out_chan, kernel_size=4),
-                    nn.LeakyReLU(0.2),
-                    nn.Flatten(),
-                    nn.Linear(out_chan, out_chan),
-                )
-
-            else:
-                self.conv2 = nn.Sequential(
-                    nn.Conv2d(out_chan, out_chan, kernel_size=3, padding=1),
-                    nn.LeakyReLU(0.2),
-                )
 
     def forward(self, x):
-        return self.conv2(self.conv1(x))
+        return self.conv_2(self.conv_1(x))
 
 
 class MiniBatchStdDev(nn.Module):
@@ -247,7 +239,7 @@ class MiniBatchStdDev(nn.Module):
 
         mean_std = (torch.std(x, dim=1) + 1e-8).mean()
         std_channel = mean_std.expand(x.size(0), 1, x.size(2), x.size(3))
-        return x.cat([x, std_channel], 1)
+        return torch.cat([x, std_channel], 1)
 
 
 class Critic(nn.Module):
@@ -262,11 +254,11 @@ class Critic(nn.Module):
                 CriticBlock(128, 256),
                 CriticBlock(256, 512),
                 CriticBlock(512, 512),
-                CriticBlock(512, 512, is_final_layer=True, downsample=False),
+                CriticBlock(512, 512, is_final_layer=True),
             ]
         )
 
-        self.from_rgbs == nn.ModuleList(
+        self.from_rgbs = nn.ModuleList(
             [
                 self.gen_from_rgbs(16),
                 self.gen_from_rgbs(32),
@@ -278,17 +270,46 @@ class Critic(nn.Module):
             ]
         )
 
-    def forward(self):
-        print()
+    def forward(self, images, steps=1, alpha=None):
+        out = None
+        n_blocks = len(self.conv_blocks)
+        start = n_blocks - steps
+
+        for index, conv_block in enumerate(self.conv_blocks[start:]):
+            if index == 0:
+                out = self.from_rgbs[start](images)
+
+            out = conv_block(out)
+
+            if index == 0 and steps > 1 and alpha is not None:
+                # clamp alpha to 0 -> 1
+                alpha = min(1.0, max(0.0, alpha))
+
+                simple_downsample = self.from_rgbs[start](
+                    F.avg_pool2d(images, kernal_size=2)
+                )
+
+                out = torch.lerp(simple_downsample, out, alpha)
+
+        return out
 
     def gen_from_rgbs(self, out_chan, image_chan=3):
         # You can add a leaky relu activation too!
         return nn.Sequential(nn.Conv2d(image_chan, out_chan, kernel_size=1))
 
 
+def get_truncated_noise(n_samples, z_dim, truncation):
+    truncated_noise = truncnorm.rvs(-truncation, truncation, size=(n_samples, z_dim))
+    return torch.Tensor(truncated_noise)
+
+
 def train():
     print("Hello There!")
     gen = Generator()
+    fake_noise = get_truncated_noise(4, 512, 0.75)
+    a = gen.forward(fake_noise)
+    critic = Critic()
+    print(critic.forward(a))
 
 
 if __name__ == "__main__":
