@@ -12,12 +12,15 @@ Assumptions:
 2. Noise is ALWAYS 512.
 
 TODOs:
-- Specific runtime initializations*
-- Allow for PixelWise normalization after each GAN Block*
-- Equalized Learning rate*
+- Specific runtime initializations + Equalized Learning rate*
+- Minibatch STDDEV
+- Exponential Moving Average*
 - Dynamically create channel progression
 - Device specification
 - multiple latent noise inputs
+
+CHECK:
+- tensor.detach()
 """
 
 
@@ -34,7 +37,7 @@ class InjectSecondaryNoise(nn.Module):
                 conv_output.shape[2],
                 conv_output.shape[3],
             )
-            noise = torch.randn(noise_shape)
+            noise = torch.randn(noise_shape).to("cuda")
 
         return conv_output + (self.weights * noise)
 
@@ -161,7 +164,11 @@ class Generator(nn.Module):
         )
 
     def forward(self, z_noise, noise=None, steps=1, alpha=None):
-        style = self.to_w_noise(z_noise)
+        normalized_noise = z_noise / torch.sqrt(
+            torch.mean(z_noise ** 2, dim=1, keepdim=True) + 1e-8
+        )
+
+        style = self.to_w_noise(normalized_noise)
 
         out = None
 
@@ -177,12 +184,19 @@ class Generator(nn.Module):
                     # clamp alpha to 0 -> 1
                     alpha = min(1.0, max(0.0, alpha))
 
-                    small_image_upsample = to_rgbs[index - 1](previous)
+                    small_image_upsample = F.interpolate(
+                        self.to_rgbs[index - 1](previous),
+                        scale_factor=2,
+                        mode="bilinear",
+                    )
                     large_image = to_rgb(out)
 
                     return torch.lerp(small_image_upsample, large_image, alpha)
                 else:  # No fad in.
                     return to_rgb(out)
+
+    def get_loss(self, crit_fake_pred):
+        return -crit_fake_pred.mean()
 
 
 class CriticBlock(nn.Module):
@@ -245,6 +259,7 @@ class Critic(nn.Module):
                 CriticBlock(128, 256),
                 CriticBlock(256, 512),
                 CriticBlock(512, 512),
+                CriticBlock(512, 512),
                 CriticBlock(512, 512, is_final_layer=True),
             ]
         )
@@ -256,6 +271,7 @@ class Critic(nn.Module):
                 self.gen_from_rgbs(64),
                 self.gen_from_rgbs(128),
                 self.gen_from_rgbs(256),
+                self.gen_from_rgbs(512),
                 self.gen_from_rgbs(512),
                 self.gen_from_rgbs(512),
             ]
@@ -275,10 +291,7 @@ class Critic(nn.Module):
             if index == 0 and steps > 1 and alpha is not None:
                 # clamp alpha to 0 -> 1
                 alpha = min(1.0, max(0.0, alpha))
-
-                simple_downsample = self.from_rgbs[start](
-                    F.avg_pool2d(images, kernal_size=2)
-                )
+                simple_downsample = self.from_rgbs[start + 1](F.avg_pool2d(images, 2))
 
                 out = torch.lerp(simple_downsample, out, alpha)
 
@@ -287,3 +300,43 @@ class Critic(nn.Module):
     def gen_from_rgbs(self, out_chan, image_chan=3):
         # You can add a leaky relu activation too!
         return nn.Sequential(nn.Conv2d(image_chan, out_chan, kernel_size=1))
+
+    def get_loss(
+        self,
+        crit_fake_pred,
+        crit_real_pred,
+        epsilon,
+        real_images,
+        fake_images,
+        steps,
+        alpha,
+        c_lambda,
+    ):
+
+        # Create mixed images and calculate gradient.
+        mixed_images = real_images * epsilon + (1 - epsilon) * fake_images
+        mixed_image_scores = self.forward(mixed_images, steps=steps, alpha=alpha)
+
+        gradient = torch.autograd.grad(
+            inputs=mixed_images,
+            outputs=mixed_image_scores,
+            grad_outputs=torch.ones_like(mixed_image_scores),
+            create_graph=True,
+            retain_graph=True,
+        )[0]
+
+        # Create gradient penalty.
+
+        grad_penalty = (
+            (gradient.view(gradient.size(0), -1).norm(2, dim=1) - 1) ** 2
+        ).mean()
+
+        # Put it all together.
+
+        fake_back = -(crit_real_pred.mean() - 0.001 * (crit_real_pred ** 2).mean())
+
+        real_back = crit_fake_pred.mean()
+
+        gp = c_lambda * grad_penalty
+
+        return fake_back + real_back + gp

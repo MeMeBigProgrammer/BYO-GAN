@@ -6,7 +6,9 @@ As a part of my independent study for Junior year, my final project was to recre
 
 ### Whitepapers:
 - [A Style-Based Generator Architecture for Generative Adversarial Networks](https://arxiv.org/abs/1812.04948)
+  - [Official Implementation](https://github.com/tkarras/progressive_growing_of_gans)
 - [Progressive Growing of GANs for Improved Quality, Stability, and Variation](https://arxiv.org/abs/1710.10196)
+  - [Official Implementation](https://github.com/NVlabs/stylegan)
 
 
 ### Datasets:
