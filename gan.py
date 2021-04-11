@@ -12,14 +12,14 @@ Assumptions:
 2. Noise is ALWAYS 512.
 
 TODOs:
-- Specific runtime initializations*
-- Equalized Learning rate*
+- Specific runtime initializations + Equalized Learning rate*
+- Minibatch STDDEV
+- Exponential Moving Average*
 - Dynamically create channel progression
 - Device specification
 - multiple latent noise inputs
 
 CHECK:
-- Minibatch STDDEV
 - tensor.detach()
 """
 
