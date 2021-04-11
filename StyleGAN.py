@@ -627,23 +627,6 @@ def test():
         print(end)
 
 
-# def memory_check():
-#     for obj in gc.get_objects():
-#         try:
-#             if torch.is_tensor(obj) or (
-#                 hasattr(obj, "data") and torch.is_tensor(obj.data)
-#             ):
-#                 print(type(obj), obj.size())
-#         except:
-#             pass
-
-
-# TODO
-# - Implement dynamic growth (take progression sizes)
-# - implement FID checking as a progressbar stat
-# - code cleanup
-
-
 if __name__ == "__main__":
     if torch.device("cuda" if torch.cuda.is_available() else "cpu").type == "cuda":
         print(torch.cuda.get_device_name(0))
