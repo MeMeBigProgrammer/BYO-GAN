@@ -1,17 +1,8 @@
 # Formatted using 'autopep8' and 'black' VS Code Extentions
 
-import sys
 import torch
-import torchvision
-import gc
-import math
 from torch import nn
 import torch.nn.functional as F
-from torchvision import datasets, transforms, utils
-import matplotlib.pyplot as plt
-from tqdm.auto import tqdm
-from scipy.stats import truncnorm
-from datetime import datetime
 
 
 """
@@ -296,24 +287,3 @@ class Critic(nn.Module):
     def gen_from_rgbs(self, out_chan, image_chan=3):
         # You can add a leaky relu activation too!
         return nn.Sequential(nn.Conv2d(image_chan, out_chan, kernel_size=1))
-
-
-def get_truncated_noise(n_samples, z_dim, truncation):
-    truncated_noise = truncnorm.rvs(-truncation, truncation, size=(n_samples, z_dim))
-    return torch.Tensor(truncated_noise)
-
-
-def train():
-    print("Hello There!")
-    gen = Generator()
-    fake_noise = get_truncated_noise(4, 512, 0.75)
-    a = gen.forward(fake_noise)
-    critic = Critic()
-    print(critic.forward(a))
-
-
-if __name__ == "__main__":
-    if torch.device("cuda" if torch.cuda.is_available() else "cpu").type == "cuda":
-        print(torch.cuda.get_device_name(0))
-
-    train()
