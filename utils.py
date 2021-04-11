@@ -55,3 +55,8 @@ def get_progression_step(im_count, im_milestone, max_steps=8):
         return (None, int(steps))
     else:
         return (round(modf(count)[0], 5), int(steps + 1))
+
+
+def set_requires_grad(model, requires_grad: bool):
+    for p in model.parameters():
+        p.requires_grad = requires_grad

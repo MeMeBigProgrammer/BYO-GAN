@@ -8,7 +8,12 @@ import matplotlib.pyplot as plt
 from tqdm.auto import tqdm
 
 from gan import Generator, Critic
-from utils import get_truncated_noise, display_image, get_progression_step
+from utils import (
+    get_truncated_noise,
+    display_image,
+    get_progression_step,
+    set_requires_grad,
+)
 
 
 # IMPORTANT CONSTANTS
@@ -20,7 +25,7 @@ noise_size = 512
 device = "cuda"
 beta_1 = 0
 beta_2 = 0.99
-learning_rate = 0.0001
+learning_rate = 0.0002
 critic_repeats = 1
 gen_weight_decay = 0.999
 
@@ -74,12 +79,12 @@ def train():
         critic.parameters(), lr=learning_rate, betas=(beta_1, beta_2)
     )
 
-    im_count = 0
+    im_count = 0 * im_milestone
     c_loss_history = []
     g_loss_history = []
     iters = 0
 
-    show_noise = get_truncated_noise(9, 512, 0.75).to(device)
+    show_noise = get_truncated_noise(16, 512, 0.75).to(device)
 
     for epoch in range(num_epochs):
 
@@ -87,6 +92,9 @@ def train():
 
         for real_im, _ in pbar:
             cur_batch_size = len(real_im)
+
+            set_requires_grad(critic, True)
+            set_requires_grad(gen, False)
 
             for i in range(critic_repeats):
                 critic_opt.zero_grad()
@@ -131,6 +139,9 @@ def train():
 
                 c_loss_history.append(loss.item())
 
+            set_requires_grad(critic, False)
+            set_requires_grad(gen, True)
+
             gen_opt.zero_grad()
             noise = get_truncated_noise(cur_batch_size, noise_size, 0.75).to(device)
 
@@ -156,7 +167,15 @@ def train():
                     save_to_disk=True,
                     filename="s-{}".format(iters),
                     title="Iteration {}".format(iters),
-                    num_display=9,
+                    num_display=16,
+                )
+
+                avg_c_loss = sum(c_loss_history[-display_step:]) / display_step
+                avg_g_loss = sum(g_loss_history[-display_step:]) / display_step
+
+                pbar.set_description(
+                    "g_loss: {0:.4}   c_loss: {1:.4}".format(avg_g_loss, avg_c_loss),
+                    refresh=True,
                 )
 
 

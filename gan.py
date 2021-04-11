@@ -13,11 +13,14 @@ Assumptions:
 
 TODOs:
 - Specific runtime initializations*
-- Allow for PixelWise normalization after each GAN Block*
 - Equalized Learning rate*
 - Dynamically create channel progression
 - Device specification
 - multiple latent noise inputs
+
+CHECK:
+- Minibatch STDDEV
+- tensor.detach()
 """
 
 
@@ -161,7 +164,11 @@ class Generator(nn.Module):
         )
 
     def forward(self, z_noise, noise=None, steps=1, alpha=None):
-        style = self.to_w_noise(z_noise)
+        normalized_noise = z_noise / torch.sqrt(
+            torch.mean(z_noise ** 2, dim=1, keepdim=True) + 1e-8
+        )
+
+        style = self.to_w_noise(normalized_noise)
 
         out = None
 
@@ -177,7 +184,11 @@ class Generator(nn.Module):
                     # clamp alpha to 0 -> 1
                     alpha = min(1.0, max(0.0, alpha))
 
-                    small_image_upsample = to_rgbs[index - 1](previous)
+                    small_image_upsample = F.interpolate(
+                        self.to_rgbs[index - 1](previous),
+                        scale_factor=2,
+                        mode="bilinear",
+                    )
                     large_image = to_rgb(out)
 
                     return torch.lerp(small_image_upsample, large_image, alpha)
@@ -280,10 +291,7 @@ class Critic(nn.Module):
             if index == 0 and steps > 1 and alpha is not None:
                 # clamp alpha to 0 -> 1
                 alpha = min(1.0, max(0.0, alpha))
-
-                simple_downsample = self.from_rgbs[start](
-                    F.avg_pool2d(images, kernal_size=2)
-                )
+                simple_downsample = self.from_rgbs[start + 1](F.avg_pool2d(images, 2))
 
                 out = torch.lerp(simple_downsample, out, alpha)
 
@@ -319,16 +327,16 @@ class Critic(nn.Module):
 
         # Create gradient penalty.
 
-        gradient = gradient.view(len(gradient), -1)
-
-        gradient_norm = gradient.norm(2, dim=1)
-
-        penalty = ((gradient_norm - 1) ** 2).mean()
+        grad_penalty = (
+            (gradient.view(gradient.size(0), -1).norm(2, dim=1) - 1) ** 2
+        ).mean()
 
         # Put it all together.
 
-        diff = -(crit_real_pred.mean() - crit_fake_pred.mean())
+        fake_back = -(crit_real_pred.mean() - 0.001 * (crit_real_pred ** 2).mean())
 
-        gp = c_lambda * penalty
+        real_back = crit_fake_pred.mean()
 
-        return diff + gp
+        gp = c_lambda * grad_penalty
+
+        return fake_back + real_back + gp
