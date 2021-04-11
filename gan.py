@@ -34,7 +34,7 @@ class InjectSecondaryNoise(nn.Module):
                 conv_output.shape[2],
                 conv_output.shape[3],
             )
-            noise = torch.randn(noise_shape)
+            noise = torch.randn(noise_shape).to("cuda")
 
         return conv_output + (self.weights * noise)
 
@@ -260,6 +260,7 @@ class Critic(nn.Module):
                 self.gen_from_rgbs(64),
                 self.gen_from_rgbs(128),
                 self.gen_from_rgbs(256),
+                self.gen_from_rgbs(512),
                 self.gen_from_rgbs(512),
                 self.gen_from_rgbs(512),
             ]

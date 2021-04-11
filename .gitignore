@@ -4,3 +4,4 @@ output/*
 .vscode/
 checkpoints/**
 test.py
+__pycache__/

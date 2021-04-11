@@ -12,7 +12,7 @@ from utils import get_truncated_noise, display_image, get_progression_step
 
 
 # IMPORTANT CONSTANTS
-batch_size = 24
+batch_size = 12
 # Progressive Growth block fade in constant; Each progression (fade-in/stabilization period) lasts X images
 im_milestone = 200 * 1000
 c_lambda = 10
@@ -56,7 +56,7 @@ images = torch.utils.data.DataLoader(
 
 def train():
     # Initialize Generator
-    gen = Generator()
+    gen = Generator().to(device)
     gen_opt = torch.optim.Adam(
         [
             {"params": gen.to_w_noise.parameters(), "lr": (learning_rate * 0.01)},
@@ -79,7 +79,9 @@ def train():
     g_loss_history = []
     iters = 0
 
-    for epoch in range(0):
+    show_noise = get_truncated_noise(9, 512, 0.75).to(device)
+
+    for epoch in range(num_epochs):
 
         pbar = tqdm(images)
 
@@ -131,9 +133,10 @@ def train():
 
             gen_opt.zero_grad()
             noise = get_truncated_noise(cur_batch_size, noise_size, 0.75).to(device)
-            fake_images = gen(noise, im_count, im_milestone)
 
             alpha, steps = get_progression_step(im_count, im_milestone)
+
+            fake_images = gen(noise, steps=steps, alpha=alpha)
 
             critic_fake_pred = critic(fake_images, steps=steps, alpha=alpha)
 
@@ -145,6 +148,16 @@ def train():
             g_loss_history.append(gen_loss.item())
 
             iters += 1
+
+            if display_step > 0 and iters % display_step == 0:
+                examples = gen(show_noise, alpha=alpha, steps=steps)
+                display_image(
+                    torch.clamp(examples, 0, 1),
+                    save_to_disk=True,
+                    filename="s-{}".format(iters),
+                    title="Iteration {}".format(iters),
+                    num_display=9,
+                )
 
 
 if __name__ == "__main__":
