@@ -1,10 +1,10 @@
-import math
 import torch
 import torchvision
 from torch import nn
 from torchvision import datasets, transforms, utils
 import matplotlib.pyplot as plt
 from scipy.stats import truncnorm
+from math import floor, modf, sqrt
 
 
 def display_image(
@@ -19,7 +19,7 @@ def display_image(
         plt.imshow(images.permute(1, 2, 0))
 
     else:  # multiple images
-        nrow = int(math.sqrt(num_display))
+        nrow = int(sqrt(num_display))
 
         image_grid = utils.make_grid(images.detach().cpu()[:num_display], nrow=nrow)
 
@@ -36,3 +36,22 @@ def display_image(
 def get_truncated_noise(n_samples, z_dim, truncation):
     truncated_noise = truncnorm.rvs(-truncation, truncation, size=(n_samples, z_dim))
     return torch.Tensor(truncated_noise)
+
+
+def get_progression_step(im_count, im_milestone, max_steps=8):
+    count = float(im_count / im_milestone)
+
+    floored_count = floor(count)
+
+    steps = (floored_count) / 2 + 1
+    is_even = floored_count % 2 == 0
+
+    if steps >= max_steps:
+        return (None, max_steps)
+
+    if steps <= 1:
+        return (None, 1)
+    elif is_even:
+        return (None, int(steps))
+    else:
+        return (round(modf(count)[0], 5), int(steps + 1))

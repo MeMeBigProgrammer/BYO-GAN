@@ -184,6 +184,9 @@ class Generator(nn.Module):
                 else:  # No fad in.
                     return to_rgb(out)
 
+    def get_loss(self, crit_fake_pred):
+        return -crit_fake_pred.mean()
+
 
 class CriticBlock(nn.Module):
     def __init__(self, in_chan, out_chan, is_final_layer=False):
@@ -245,6 +248,7 @@ class Critic(nn.Module):
                 CriticBlock(128, 256),
                 CriticBlock(256, 512),
                 CriticBlock(512, 512),
+                CriticBlock(512, 512),
                 CriticBlock(512, 512, is_final_layer=True),
             ]
         )
@@ -287,3 +291,43 @@ class Critic(nn.Module):
     def gen_from_rgbs(self, out_chan, image_chan=3):
         # You can add a leaky relu activation too!
         return nn.Sequential(nn.Conv2d(image_chan, out_chan, kernel_size=1))
+
+    def get_loss(
+        self,
+        crit_fake_pred,
+        crit_real_pred,
+        epsilon,
+        real_images,
+        fake_images,
+        steps,
+        alpha,
+        c_lambda,
+    ):
+
+        # Create mixed images and calculate gradient.
+        mixed_images = real_images * epsilon + (1 - epsilon) * fake_images
+        mixed_image_scores = self.forward(mixed_images, steps=steps, alpha=alpha)
+
+        gradient = torch.autograd.grad(
+            inputs=mixed_images,
+            outputs=mixed_image_scores,
+            grad_outputs=torch.ones_like(mixed_image_scores),
+            create_graph=True,
+            retain_graph=True,
+        )[0]
+
+        # Create gradient penalty.
+
+        gradient = gradient.view(len(gradient), -1)
+
+        gradient_norm = gradient.norm(2, dim=1)
+
+        penalty = ((gradient_norm - 1) ** 2).mean()
+
+        # Put it all together.
+
+        diff = -(crit_real_pred.mean() - crit_fake_pred.mean())
+
+        gp = c_lambda * penalty
+
+        return diff + gp
