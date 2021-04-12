@@ -3,6 +3,7 @@
 import torch
 from torch import nn
 import torch.nn.functional as F
+from math import sqrt
 
 
 """
@@ -13,7 +14,6 @@ Assumptions:
 
 TODOs:
 - Specific runtime initializations + Equalized Learning rate*
-- Minibatch STDDEV
 - Exponential Moving Average*
 - Dynamically create channel progression
 - Device specification
@@ -22,6 +22,45 @@ TODOs:
 CHECK:
 - tensor.detach()
 """
+
+
+class EqualizedConv2d(nn.Conv2d):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+        torch.nn.init.normal_(self.weight)
+        torch.nn.init.zeros_(self.bias)
+
+        self.scale = sqrt(
+            2 / (self.kernel_size[0] * self.kernel_size[1] * self.in_channels)
+        )
+
+    def forward(self, x):
+        return torch.conv2d(
+            input=x,
+            weight=self.weight * self.scale,
+            bias=self.bias,
+            stride=self.stride,
+            padding=self.padding,
+            dilation=self.dilation,
+            groups=self.groups,
+        )
+
+
+class EqualizedLinear(nn.Linear):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+        torch.nn.init.normal_(self.weight)
+        torch.nn.init.zeros_(self.bias)
+
+        self.scale = sqrt(2 / (self.in_features))
+
+    def forward(self, x):
+        return torch.nn.functional.linear(x, self.weight * self.scale, self.bias)
+
+
+a = EqualizedLinear(1, 1)
 
 
 class InjectSecondaryNoise(nn.Module):
@@ -37,7 +76,7 @@ class InjectSecondaryNoise(nn.Module):
                 conv_output.shape[2],
                 conv_output.shape[3],
             )
-            noise = torch.randn(noise_shape).to("cuda")
+            noise = torch.randn(noise_shape, device=conv_output.device)
 
         return conv_output + (self.weights * noise)
 
@@ -49,7 +88,7 @@ class AdaINBlock(nn.Module):
         self.channels = channels
 
         self.instance_norm = nn.InstanceNorm2d(channels)
-        self.lin = nn.Linear(style_length, 2 * channels)
+        self.lin = EqualizedLinear(style_length, 2 * channels)
 
     def forward(self, image, noise):
         y_style = self.lin(noise).view(-1, 2, self.channels, 1, 1)
@@ -61,7 +100,7 @@ class StyleConvBlock(nn.Module):
     def __init__(self, in_chan, out_chan):
         super().__init__()
 
-        self.conv = nn.Conv2d(in_chan, out_chan, kernel_size=3, padding=1)
+        self.conv = EqualizedConv2d(in_chan, out_chan, kernel_size=3, padding=1)
         self.inject_noise = InjectSecondaryNoise(out_chan)
         self.adain = AdaINBlock(out_chan)
         self.activation = nn.LeakyReLU(negative_slope=0.2)
@@ -124,7 +163,7 @@ class MappingLayers(nn.Module):
 
     def generate_mapping_block(self, channels: int):
         return nn.Sequential(
-            nn.Linear(channels, channels), nn.LeakyReLU(negative_slope=0.2)
+            EqualizedLinear(channels, channels), nn.LeakyReLU(negative_slope=0.2)
         )
 
     def forward(self, input):
@@ -152,14 +191,14 @@ class Generator(nn.Module):
 
         self.to_rgbs = nn.ModuleList(
             [
-                nn.Conv2d(512, 3, kernel_size=1),
-                nn.Conv2d(512, 3, kernel_size=1),
-                nn.Conv2d(512, 3, kernel_size=1),
-                nn.Conv2d(256, 3, kernel_size=1),
-                nn.Conv2d(128, 3, kernel_size=1),
-                nn.Conv2d(64, 3, kernel_size=1),
-                nn.Conv2d(32, 3, kernel_size=1),
-                nn.Conv2d(16, 3, kernel_size=1),
+                EqualizedConv2d(512, 3, kernel_size=1),
+                EqualizedConv2d(512, 3, kernel_size=1),
+                EqualizedConv2d(512, 3, kernel_size=1),
+                EqualizedConv2d(256, 3, kernel_size=1),
+                EqualizedConv2d(128, 3, kernel_size=1),
+                EqualizedConv2d(64, 3, kernel_size=1),
+                EqualizedConv2d(32, 3, kernel_size=1),
+                EqualizedConv2d(16, 3, kernel_size=1),
             ]
         )
 
@@ -208,24 +247,24 @@ class CriticBlock(nn.Module):
         if is_final_layer:
             self.conv_1 = nn.Sequential(
                 MiniBatchStdDev(),
-                nn.Conv2d(in_chan + 1, out_chan, kernel_size=3, padding=1),
+                EqualizedConv2d(in_chan + 1, out_chan, kernel_size=3, padding=1),
                 nn.LeakyReLU(0.2),
             )
 
             self.conv_2 = nn.Sequential(
-                nn.Conv2d(out_chan, out_chan, kernel_size=4),
+                EqualizedConv2d(out_chan, out_chan, kernel_size=4),
                 nn.LeakyReLU(0.2),
                 nn.Flatten(),
-                nn.Linear(out_chan, 1),
+                EqualizedLinear(out_chan, 1),
             )
         else:
             self.conv_1 = nn.Sequential(
-                nn.Conv2d(in_chan, out_chan, kernel_size=3, padding=1),
+                EqualizedConv2d(in_chan, out_chan, kernel_size=3, padding=1),
                 nn.LeakyReLU(0.2),
             )
 
             self.conv_2 = nn.Sequential(
-                nn.Conv2d(out_chan, out_chan, kernel_size=3, padding=1),
+                EqualizedConv2d(out_chan, out_chan, kernel_size=3, padding=1),
                 nn.AvgPool2d(2),
                 nn.LeakyReLU(0.2),
             )
@@ -235,16 +274,36 @@ class CriticBlock(nn.Module):
 
 
 class MiniBatchStdDev(nn.Module):
-    def __init__(self):
+    def __init__(self, group_size=4):
         super().__init__()
+        self.group_size = group_size
 
     def forward(self, x):
-        if x.dim() != 4:
-            raise ValueError("Tensor dim must be 4, got {} instead.".format(x.dim()))
 
-        mean_std = (torch.std(x, dim=1) + 1e-8).mean()
-        std_channel = mean_std.expand(x.size(0), 1, x.size(2), x.size(3))
-        return torch.cat([x, std_channel], 1)
+        (batch_size, channels, h, w) = x.shape
+
+        if self.group_size % batch_size != 0:
+            self.group_size = batch_size
+
+        minibatch = x.reshape([self.group_size, -1, 1, channels, h, w])
+
+        minibatch_means = x.mean(0, keepdim=True)
+
+        minibatch_variance = ((minibatch - minibatch_means) ** 2).mean(0, keepdim=True)
+
+        minibatch_std = (
+            ((minibatch_variance + 1e-8) ** 0.5)
+            .mean([3, 4, 5], keepdim=True)
+            .squeeze(3)
+        )
+
+        minibatch_std = (
+            minibatch_std.expand(self.group_size, -1, -1, h, w)
+            .clone()
+            .reshape(batch_size, 1, h, w)
+        )
+
+        return torch.cat([x, minibatch_std], dim=1)
 
 
 class Critic(nn.Module):
@@ -299,7 +358,7 @@ class Critic(nn.Module):
 
     def gen_from_rgbs(self, out_chan, image_chan=3):
         # You can add a leaky relu activation too!
-        return nn.Sequential(nn.Conv2d(image_chan, out_chan, kernel_size=1))
+        return nn.Sequential(EqualizedConv2d(image_chan, out_chan, kernel_size=1))
 
     def get_loss(
         self,

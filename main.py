@@ -17,7 +17,7 @@ from utils import (
 
 
 # IMPORTANT CONSTANTS
-batch_size = 12
+batch_size = 24
 # Progressive Growth block fade in constant; Each progression (fade-in/stabilization period) lasts X images
 im_milestone = 200 * 1000
 c_lambda = 10
