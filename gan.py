@@ -13,7 +13,6 @@ Assumptions:
 2. Noise is ALWAYS 512.
 
 TODOs:
-- Specific runtime initializations + Equalized Learning rate*
 - Exponential Moving Average*
 - Dynamically create channel progression
 - Device specification
@@ -54,7 +53,7 @@ class EqualizedLinear(nn.Linear):
         torch.nn.init.normal_(self.weight)
         torch.nn.init.zeros_(self.bias)
 
-        self.scale = sqrt(2 / (self.in_features))
+        self.scale = sqrt(2 / self.in_features)
 
     def forward(self, x):
         return torch.nn.functional.linear(x, self.weight * self.scale, self.bias)
@@ -392,10 +391,8 @@ class Critic(nn.Module):
 
         # Put it all together.
 
-        fake_back = -(crit_real_pred.mean() - 0.001 * (crit_real_pred ** 2).mean())
-
-        real_back = crit_fake_pred.mean()
+        diff = -(crit_real_pred.mean() - crit_fake_pred.mean())
 
         gp = c_lambda * grad_penalty
 
-        return fake_back + real_back + gp
+        return diff + gp

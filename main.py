@@ -30,7 +30,7 @@ critic_repeats = 1
 gen_weight_decay = 0.999
 
 num_epochs = 500
-display_step = 50
+display_step = 100
 checkpoint_step = 1000
 
 final_image_size = 512
@@ -50,16 +50,14 @@ transformation = transforms.Compose(
     ]
 )
 
-path_root = "./data"
-
-anime_images = datasets.ImageFolder(path_root + "/anime", transformation)
+anime_images = datasets.ImageFolder("./data/anime", transformation)
 
 images = torch.utils.data.DataLoader(
-    anime_images, batch_size=batch_size, shuffle=True, drop_last=False, num_workers=3
+    anime_images, batch_size=batch_size, shuffle=True, drop_last=False, num_workers=4
 )
 
 
-def train():
+def train(checkpoint=None):
     # Initialize Generator
     gen = Generator().to(device)
     gen_opt = torch.optim.Adam(
@@ -72,12 +70,14 @@ def train():
         betas=(beta_1, beta_2),
         weight_decay=gen_weight_decay,
     )
+    gen_scheduler = torch.optim.lr_scheduler.ExponentialLR(gen_opt, gamma=0.99)
 
     # Initialize Critic
     critic = Critic().to(device)
     critic_opt = torch.optim.Adam(
         critic.parameters(), lr=learning_rate, betas=(beta_1, beta_2)
     )
+    critic_scheduler = torch.optim.lr_scheduler.ExponentialLR(critic_opt, gamma=0.99)
 
     im_count = 0 * im_milestone
     c_loss_history = []
@@ -85,6 +85,13 @@ def train():
     iters = 0
 
     show_noise = get_truncated_noise(16, 512, 0.75).to(device)
+
+    if checkpoint is not None:
+        save = torch.load(checkpoint)
+        gen.load_state_dict(save["gen"])
+        critic.load_state_dict(save["critic"])
+        iters = save["iter"]
+        im_count = save["im_count"]
 
     for epoch in range(num_epochs):
 
@@ -160,7 +167,7 @@ def train():
 
             iters += 1
 
-            if display_step > 0 and iters % display_step == 0:
+            if iters > 0 and iters % display_step == 0:
                 examples = gen(show_noise, alpha=alpha, steps=steps)
                 display_image(
                     torch.clamp(examples, 0, 1),
@@ -178,9 +185,23 @@ def train():
                     refresh=True,
                 )
 
+            if iters > 0 and iters % 2500 == 0:
+                torch.save(
+                    {
+                        "gen": gen.state_dict(),
+                        "critic": critic.state_dict(),
+                        "iter": iters,
+                        "im_count": im_count,
+                    },
+                    f"./checkpoints/chk-{iters}.pth",
+                )
+
+        gen_scheduler.step()
+        critic_scheduler.step()
+
 
 if __name__ == "__main__":
     if torch.device("cuda" if torch.cuda.is_available() else "cpu").type == "cuda":
         print(torch.cuda.get_device_name(0))
 
-    train()
+    train(checkpoint="./checkpoints/chk-5000.pth")
