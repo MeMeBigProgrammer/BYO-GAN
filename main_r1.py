@@ -122,9 +122,9 @@ def train(checkpoint=None):
                     mode="bilinear",
                 ).to(device, dtype=torch.float)
 
-                critic_fake_pred = critic(fake_im, steps=steps, alpha=alpha)
+                critic_fake_pred = critic(fake_im.detach(), steps=steps, alpha=alpha)
 
-                c_loss = critic.get_r1_loss(critic_fake_pred, real_im, steps, alpha)
+                c_loss = critic.get_r1_loss(critic_fake_pred, real_im.detach(), steps, alpha)
 
                 critic.zero_grad()
 
