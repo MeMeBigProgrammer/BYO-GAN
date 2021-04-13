@@ -3,6 +3,7 @@
 import torch
 from torch import nn
 import torch.nn.functional as F
+from torch.autograd import Function
 from math import sqrt
 
 
@@ -23,49 +24,129 @@ CHECK:
 """
 
 
-class EqualizedConv2d(nn.Conv2d):
+class EqualLR:
+    def __init__(self, name):
+        self.name = name
+
+    def compute_weight(self, module):
+        weight = getattr(module, self.name + "_orig")
+        fan_in = weight.data.size(1) * weight.data[0][0].numel()
+
+        return weight * sqrt(2 / fan_in)
+
+    @staticmethod
+    def apply(module, name):
+        fn = EqualLR(name)
+
+        weight = getattr(module, name)
+        del module._parameters[name]
+        module.register_parameter(name + "_orig", nn.Parameter(weight.data))
+        module.register_forward_pre_hook(fn)
+
+        return fn
+
+    def __call__(self, module, input):
+        weight = self.compute_weight(module)
+        setattr(module, self.name, weight)
+
+
+def equal_lr(module, name="weight"):
+    EqualLR.apply(module, name)
+
+    return module
+
+
+class EqualizedConv2d(nn.Module):
     def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+        super().__init__()
 
-        torch.nn.init.normal_(self.weight)
-        torch.nn.init.zeros_(self.bias)
+        conv = nn.Conv2d(*args, **kwargs)
+        conv.weight.data.normal_()
+        conv.bias.data.zero_()
+        self.conv = equal_lr(conv)
 
-        self.scale = sqrt(
-            2 / (self.kernel_size[0] * self.kernel_size[1] * self.in_channels)
+    def forward(self, input):
+        return self.conv(input)
+
+
+class EqualizedLinear(nn.Module):
+    def __init__(self, *args, **kwargs):
+        super().__init__()
+
+        linear = nn.Linear(*args, **kwargs)
+        linear.weight.data.normal_()
+        linear.bias.data.zero_()
+
+        self.linear = equal_lr(linear)
+
+    def forward(self, input):
+        return self.linear(input)
+
+
+class BlurFunctionBackward(Function):
+    @staticmethod
+    def forward(ctx, grad_output, kernel, kernel_flip):
+        ctx.save_for_backward(kernel, kernel_flip)
+
+        grad_input = F.conv2d(
+            grad_output, kernel_flip, padding=1, groups=grad_output.shape[1]
         )
 
-    def forward(self, x):
-        return torch.conv2d(
-            input=x,
-            weight=self.weight * self.scale,
-            bias=self.bias,
-            stride=self.stride,
-            padding=self.padding,
-            dilation=self.dilation,
-            groups=self.groups,
+        return grad_input
+
+    @staticmethod
+    def backward(ctx, gradgrad_output):
+        kernel, kernel_flip = ctx.saved_tensors
+
+        grad_input = F.conv2d(
+            gradgrad_output, kernel, padding=1, groups=gradgrad_output.shape[1]
         )
 
-
-class EqualizedLinear(nn.Linear):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-
-        torch.nn.init.normal_(self.weight)
-        torch.nn.init.zeros_(self.bias)
-
-        self.scale = sqrt(2 / self.in_features)
-
-    def forward(self, x):
-        return torch.nn.functional.linear(x, self.weight * self.scale, self.bias)
+        return grad_input, None, None
 
 
-a = EqualizedLinear(1, 1)
+class BlurFunction(Function):
+    @staticmethod
+    def forward(ctx, input, kernel, kernel_flip):
+        ctx.save_for_backward(kernel, kernel_flip)
+
+        output = F.conv2d(input, kernel, padding=1, groups=input.shape[1])
+
+        return output
+
+    @staticmethod
+    def backward(ctx, grad_output):
+        kernel, kernel_flip = ctx.saved_tensors
+
+        grad_input = BlurFunctionBackward.apply(grad_output, kernel, kernel_flip)
+
+        return grad_input, None, None
+
+
+blur = BlurFunction.apply
+
+
+class Blur(nn.Module):
+    def __init__(self, channel):
+        super().__init__()
+
+        weight = torch.tensor([[1, 2, 1], [2, 4, 2], [1, 2, 1]], dtype=torch.float32)
+        weight = weight.view(1, 1, 3, 3)
+        weight = weight / weight.sum()
+        weight_flip = torch.flip(weight, [2, 3])
+
+        self.register_buffer("weight", weight.repeat(channel, 1, 1, 1))
+        self.register_buffer("weight_flip", weight_flip.repeat(channel, 1, 1, 1))
+
+    def forward(self, input):
+        return blur(input, self.weight, self.weight_flip)
+        # return F.conv2d(input, self.weight, padding=1, groups=input.shape[1])
 
 
 class InjectSecondaryNoise(nn.Module):
     def __init__(self, channels):
         super().__init__()
-        self.weights = nn.Parameter(torch.ones((1, channels, 1, 1)))
+        self.weights = nn.Parameter(torch.zeros((1, channels, 1, 1)))
 
     def forward(self, conv_output, noise=None):
         if noise is None:
@@ -81,18 +162,23 @@ class InjectSecondaryNoise(nn.Module):
 
 
 class AdaINBlock(nn.Module):
-    def __init__(self, channels, style_length=512):
+    def __init__(self, in_channel, style_dim=512):
         super().__init__()
 
-        self.channels = channels
+        self.norm = nn.InstanceNorm2d(in_channel)
+        self.style = EqualizedLinear(style_dim, in_channel * 2)
 
-        self.instance_norm = nn.InstanceNorm2d(channels)
-        self.lin = EqualizedLinear(style_length, 2 * channels)
+        self.style.linear.bias.data[:in_channel] = 1
+        self.style.linear.bias.data[in_channel:] = 0
 
-    def forward(self, image, noise):
-        y_style = self.lin(noise).view(-1, 2, self.channels, 1, 1)
-        inst_norm = self.instance_norm(image)
-        return (inst_norm * y_style[:, 0]) + y_style[:, 1]
+    def forward(self, input, style):
+        style = self.style(style).unsqueeze(2).unsqueeze(3)
+        gamma, beta = style.chunk(2, 1)
+
+        out = self.norm(input)
+        out = gamma * out + beta
+
+        return out
 
 
 class StyleConvBlock(nn.Module):
@@ -101,14 +187,14 @@ class StyleConvBlock(nn.Module):
 
         self.conv = EqualizedConv2d(in_chan, out_chan, kernel_size=3, padding=1)
         self.inject_noise = InjectSecondaryNoise(out_chan)
+        self.activation = nn.LeakyReLU(0.2)
         self.adain = AdaINBlock(out_chan)
-        self.activation = nn.LeakyReLU(negative_slope=0.2)
 
     def forward(self, x, style, noise=None):
         out = self.conv(x)
         out = self.inject_noise(out, noise=noise)
-        out = self.adain(out, style)
-        return self.activation(out)
+        out = self.activation(out)
+        return self.adain(out, style)
 
 
 class StyleGanBlock(nn.Module):
@@ -123,9 +209,10 @@ class StyleGanBlock(nn.Module):
         self.does_upsample = does_upsample
 
         self.upsample = nn.Upsample(scale_factor=2, mode="bilinear")
+        self.blur = Blur(out_chan)
 
         if is_initial:
-            self.conv_1 = nn.Parameter(torch.ones(1, in_chan, 4, 4))
+            self.conv_1 = nn.Parameter(torch.randn(1, in_chan, 4, 4))
         else:
             self.conv_1 = StyleConvBlock(in_chan, out_chan)
 
@@ -142,6 +229,7 @@ class StyleGanBlock(nn.Module):
             out = self.conv_1.repeat(batch_size, 1, 1, 1)
         else:
             out = self.conv_1(x, style, noise)
+            out = self.blur(out)
 
         return self.conv_2(out, style, noise)
 
@@ -161,19 +249,25 @@ class MappingLayers(nn.Module):
         )
 
     def generate_mapping_block(self, channels: int):
-        return nn.Sequential(
-            EqualizedLinear(channels, channels), nn.LeakyReLU(negative_slope=0.2)
-        )
+        return nn.Sequential(EqualizedLinear(channels, channels), nn.LeakyReLU(0.2))
 
     def forward(self, input):
         return self.layers(input)
+
+
+class PixelNorm(nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, input):
+        return input / torch.sqrt(torch.mean(input ** 2, dim=1, keepdim=True) + 1e-8)
 
 
 class Generator(nn.Module):
     def __init__(self):
         super().__init__()
 
-        self.to_w_noise = MappingLayers()
+        self.to_w_noise = nn.Sequential(PixelNorm(), MappingLayers())
 
         self.gen_blocks = nn.ModuleList(
             [
@@ -236,6 +330,9 @@ class Generator(nn.Module):
     def get_loss(self, crit_fake_pred):
         return -crit_fake_pred.mean()
 
+    def get_r1_loss(self, crit_fake_pred):
+        return F.softplus(-crit_fake_pred).mean()
+
 
 class CriticBlock(nn.Module):
     def __init__(self, in_chan, out_chan, is_final_layer=False):
@@ -251,6 +348,7 @@ class CriticBlock(nn.Module):
             )
 
             self.conv_2 = nn.Sequential(
+                Blur(out_chan),
                 EqualizedConv2d(out_chan, out_chan, kernel_size=4),
                 nn.LeakyReLU(0.2),
                 nn.Flatten(),
@@ -263,6 +361,7 @@ class CriticBlock(nn.Module):
             )
 
             self.conv_2 = nn.Sequential(
+                Blur(out_chan),
                 EqualizedConv2d(out_chan, out_chan, kernel_size=3, padding=1),
                 nn.AvgPool2d(2),
                 nn.LeakyReLU(0.2),
@@ -356,20 +455,25 @@ class Critic(nn.Module):
         return out
 
     def gen_from_rgbs(self, out_chan, image_chan=3):
-        # You can add a leaky relu activation too!
-        return nn.Sequential(EqualizedConv2d(image_chan, out_chan, kernel_size=1))
+        # You can add a leaky relu activation.
+        return nn.Sequential(
+            EqualizedConv2d(image_chan, out_chan, kernel_size=1), nn.LeakyReLU(0.2)
+        )
 
     def get_loss(
         self,
         crit_fake_pred,
         crit_real_pred,
-        epsilon,
         real_images,
         fake_images,
         steps,
         alpha,
         c_lambda,
     ):
+
+        epsilon = torch.rand(
+            real_images.shape[0], 1, 1, 1, device=self.device, requires_grad=True
+        )
 
         # Create mixed images and calculate gradient.
         mixed_images = real_images * epsilon + (1 - epsilon) * fake_images
@@ -396,3 +500,19 @@ class Critic(nn.Module):
         gp = c_lambda * grad_penalty
 
         return diff + gp
+
+    def get_r1_loss(self, crit_fake_pred, real_im, steps, alpha):
+        real_im.requires_grad = True
+        crit_real_pred = self.forward(real_im, steps, alpha)
+        real_predict = F.softplus(-crit_real_pred).mean()
+
+        grad_real = torch.autograd.grad(
+            outputs=crit_real_pred.sum(), inputs=real_im, create_graph=True
+        )[0]
+        grad_penalty = (
+            grad_real.view(grad_real.size(0), -1).norm(2, dim=1) ** 2
+        ).mean()
+        grad_penalty = 10 / 2 * grad_penalty
+
+        fake_predict = F.softplus(crit_fake_pred).mean()
+        return fake_predict + real_predict + grad_penalty

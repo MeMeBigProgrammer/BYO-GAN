@@ -43,10 +43,9 @@ show_noise = get_truncated_noise(4, 512, 0.75).to(device)
 transformation = transforms.Compose(
     [
         transforms.Resize((final_image_size, final_image_size)),
-        transforms.CenterCrop((final_image_size, final_image_size)),
         transforms.RandomHorizontalFlip(),
         transforms.ToTensor(),
-        transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
+        transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5), inplace=True),
         transforms.ConvertImageDtype(float),
     ]
 )
@@ -54,7 +53,7 @@ transformation = transforms.Compose(
 anime_images = datasets.ImageFolder("./data/anime", transformation)
 
 images = torch.utils.data.DataLoader(
-    anime_images, batch_size=batch_size, shuffle=True, drop_last=False, num_workers=4
+    anime_images, batch_size=batch_size, shuffle=True, drop_last=False, num_workers=3
 )
 
 
@@ -63,7 +62,11 @@ def train(checkpoint=None):
     gen = Generator().to(device)
     gen_opt = torch.optim.Adam(
         [
-            {"params": gen.to_w_noise.parameters(), "lr": (learning_rate * 0.01)},
+            {
+                "params": gen.to_w_noise.parameters(),
+                "lr": (learning_rate * 0.01),
+                "mult": 0.01,
+            },
             {"params": gen.gen_blocks.parameters()},
             {"params": gen.to_rgbs.parameters()},
         ],
@@ -80,7 +83,7 @@ def train(checkpoint=None):
     )
     critic.train()
 
-    im_count = 0 * im_milestone
+    im_count = 1 * im_milestone
     iters = 0
     c_loss_history = []
     g_loss_history = []
@@ -121,17 +124,7 @@ def train(checkpoint=None):
 
                 critic_fake_pred = critic(fake_im, steps=steps, alpha=alpha)
 
-                critic_real_pred = critic(real_im, steps=steps, alpha=alpha)
-
-                c_loss = critic.get_loss(
-                    critic_fake_pred,
-                    critic_real_pred,
-                    real_im,
-                    fake_im,
-                    steps,
-                    alpha,
-                    c_lambda,
-                )
+                c_loss = critic.get_r1_loss(critic_fake_pred, real_im, steps, alpha)
 
                 critic.zero_grad()
 
@@ -154,7 +147,7 @@ def train(checkpoint=None):
 
             critic_fake_pred = critic(fake_images, steps=steps, alpha=alpha)
 
-            g_loss = gen.get_loss(critic_fake_pred)
+            g_loss = gen.get_r1_loss(critic_fake_pred)
 
             gen.zero_grad()
             g_loss.backward()
