@@ -14,7 +14,6 @@ Assumptions:
 2. Noise is ALWAYS 512.
 
 TODOs:
-- Exponential Moving Average*
 - Dynamically create channel progression
 - Device specification
 - multiple latent noise inputs
@@ -212,7 +211,10 @@ class StyleGanBlock(nn.Module):
         self.blur = Blur(out_chan)
 
         if is_initial:
-            self.conv_1 = nn.Parameter(torch.randn(1, in_chan, 4, 4))
+            self.constant = nn.Parameter(torch.randn(1, in_chan, 4, 4))
+            self.inject_noise = InjectSecondaryNoise(out_chan)
+            self.activation = nn.LeakyReLU(0.2)
+            self.adain = AdaINBlock(out_chan)
         else:
             self.conv_1 = StyleConvBlock(in_chan, out_chan)
 
@@ -226,7 +228,10 @@ class StyleGanBlock(nn.Module):
             x = self.upsample(x)
 
         if self.is_initial:
-            out = self.conv_1.repeat(batch_size, 1, 1, 1)
+            out = self.inject_noise(
+                self.constant.repeat(batch_size, 1, 1, 1), noise=noise
+            )
+            out = self.adain(self.activation(out), style)
         else:
             out = self.conv_1(x, style, noise)
             out = self.blur(out)
@@ -296,11 +301,9 @@ class Generator(nn.Module):
         )
 
     def forward(self, z_noise, noise=None, steps=1, alpha=None):
-        normalized_noise = z_noise / torch.sqrt(
-            torch.mean(z_noise ** 2, dim=1, keepdim=True) + 1e-8
-        )
+        # print(self.to_rgbs.state_dict())
 
-        style = self.to_w_noise(normalized_noise)
+        style = self.to_w_noise(z_noise)
 
         out = None
 
