@@ -23,6 +23,42 @@ CHECK:
 """
 
 
+class EMA:
+    def __init__(self, model, decay):
+        self.model = model
+        self.decay = decay
+        self.shadow = {}
+        self.backup = {}
+
+    def register(self):
+        for name, param in self.model.named_parameters():
+            if param.requires_grad:
+                self.shadow[name] = param.data.clone()
+
+    def update(self):
+        for name, param in self.model.named_parameters():
+            if param.requires_grad:
+                assert name in self.shadow
+                new_average = (
+                    1.0 - self.decay
+                ) * param.data + self.decay * self.shadow[name]
+                self.shadow[name] = new_average.clone()
+
+    def apply_shadow(self):
+        for name, param in self.model.named_parameters():
+            if param.requires_grad:
+                assert name in self.shadow
+                self.backup[name] = param.data
+                param.data = self.shadow[name]
+
+    def restore(self):
+        for name, param in self.model.named_parameters():
+            if param.requires_grad:
+                assert name in self.backup
+                param.data = self.backup[name]
+        self.backup = {}
+
+
 class EqualLR:
     def __init__(self, name):
         self.name = name
@@ -411,19 +447,6 @@ class Critic(nn.Module):
     def __init__(self):
         super().__init__()
 
-        self.conv_blocks = nn.ModuleList(
-            [
-                CriticBlock(16, 32),
-                CriticBlock(32, 64),
-                CriticBlock(64, 128),
-                CriticBlock(128, 256),
-                CriticBlock(256, 512),
-                CriticBlock(512, 512),
-                CriticBlock(512, 512),
-                CriticBlock(512, 512, is_final_layer=True),
-            ]
-        )
-
         self.from_rgbs = nn.ModuleList(
             [
                 self.gen_from_rgbs(16),
@@ -434,6 +457,19 @@ class Critic(nn.Module):
                 self.gen_from_rgbs(512),
                 self.gen_from_rgbs(512),
                 self.gen_from_rgbs(512),
+            ]
+        )
+
+        self.conv_blocks = nn.ModuleList(
+            [
+                CriticBlock(16, 32),
+                CriticBlock(32, 64),
+                CriticBlock(64, 128),
+                CriticBlock(128, 256),
+                CriticBlock(256, 512),
+                CriticBlock(512, 512),
+                CriticBlock(512, 512),
+                CriticBlock(512, 512, is_final_layer=True),
             ]
         )
 
