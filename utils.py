@@ -34,8 +34,8 @@ def display_image(
 
 
 def get_truncated_noise(n_samples, z_dim, truncation):
-    truncated_noise = truncnorm.rvs(-truncation, truncation, size=(n_samples, z_dim))
-    return torch.Tensor(truncated_noise)
+    # truncated_noise = truncnorm.rvs(-truncation, truncation, size=(n_samples, z_dim))
+    return torch.randn((n_samples, z_dim), requires_grad=True).cuda()
 
 
 def get_progression_step(im_count, im_milestone, max_steps=8):

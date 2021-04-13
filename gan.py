@@ -23,6 +23,64 @@ CHECK:
 """
 
 
+class FusedUpsample(nn.Module):
+    def __init__(self, in_channel, out_channel, kernel_size, padding=0):
+        super().__init__()
+
+        weight = torch.randn(in_channel, out_channel, kernel_size, kernel_size)
+        bias = torch.zeros(out_channel)
+
+        fan_in = in_channel * kernel_size * kernel_size
+        self.multiplier = sqrt(2 / fan_in)
+
+        self.weight = nn.Parameter(weight)
+        self.bias = nn.Parameter(bias)
+
+        self.pad = padding
+
+    def forward(self, input):
+        weight = F.pad(self.weight * self.multiplier, [1, 1, 1, 1])
+        weight = (
+            weight[:, :, 1:, 1:]
+            + weight[:, :, :-1, 1:]
+            + weight[:, :, 1:, :-1]
+            + weight[:, :, :-1, :-1]
+        ) / 4
+
+        out = F.conv_transpose2d(input, weight, self.bias, stride=2, padding=self.pad)
+
+        return out
+
+
+class FusedDownsample(nn.Module):
+    def __init__(self, in_channel, out_channel, kernel_size, padding=0):
+        super().__init__()
+
+        weight = torch.randn(out_channel, in_channel, kernel_size, kernel_size)
+        bias = torch.zeros(out_channel)
+
+        fan_in = in_channel * kernel_size * kernel_size
+        self.multiplier = sqrt(2 / fan_in)
+
+        self.weight = nn.Parameter(weight)
+        self.bias = nn.Parameter(bias)
+
+        self.pad = padding
+
+    def forward(self, input):
+        weight = F.pad(self.weight * self.multiplier, [1, 1, 1, 1])
+        weight = (
+            weight[:, :, 1:, 1:]
+            + weight[:, :, :-1, 1:]
+            + weight[:, :, 1:, :-1]
+            + weight[:, :, :-1, :-1]
+        ) / 4
+
+        out = F.conv2d(input, weight, self.bias, stride=2, padding=self.pad)
+
+        return out
+
+
 class EMA:
     def __init__(self, model, decay):
         self.model = model
@@ -337,17 +395,26 @@ class Generator(nn.Module):
         )
 
     def forward(self, z_noise, noise=None, steps=1, alpha=None):
-        # print(self.to_rgbs.state_dict())
 
         style = self.to_w_noise(z_noise)
 
         out = None
 
+        noise = []
+
+        for i in range(steps):
+            size = 4 * 2 ** i
+            noise.append(
+                torch.randn(len(z_noise), 1, size, size, device=z_noise.device)
+            )
+
+        out = noise[0]
+
         for index, (to_rgb, gen_block) in enumerate(zip(self.to_rgbs, self.gen_blocks)):
 
             previous = out
 
-            out = gen_block.forward(out, style, len(z_noise), noise=noise)
+            out = gen_block.forward(out, style, len(z_noise), noise=noise[index])
 
             if (index + 1) >= steps:  # final step
                 if alpha is not None and index > 0:  # mix final image and return
@@ -391,6 +458,8 @@ class CriticBlock(nn.Module):
                 EqualizedConv2d(out_chan, out_chan, kernel_size=4),
                 nn.LeakyReLU(0.2),
                 nn.Flatten(),
+                EqualizedLinear(out_chan, out_chan),
+                nn.LeakyReLU(0.2),
                 EqualizedLinear(out_chan, 1),
             )
         else:
@@ -551,7 +620,11 @@ class Critic(nn.Module):
         grad_penalty = (
             grad_real.view(grad_real.size(0), -1).norm(2, dim=1) ** 2
         ).mean()
-        grad_penalty = 10 / 2 * grad_penalty
+        grad_penalty = 0.02 / 2 * grad_penalty
 
         fake_predict = F.softplus(crit_fake_pred).mean()
-        return fake_predict + real_predict + grad_penalty
+        # set gradients
+        fake_predict.backward()
+        real_predict.backward(retain_graph=True)
+        grad_penalty.backward()
+        return (grad_penalty + fake_predict + real_predict), grad_penalty

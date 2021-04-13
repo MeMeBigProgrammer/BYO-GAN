@@ -24,7 +24,7 @@ noise_size = 512
 device = "cuda"
 beta_1 = 0
 beta_2 = 0.99
-learning_rate = 0.0002
+learning_rate = 0.002
 critic_repeats = 1
 gen_weight_decay = 0.999
 
@@ -65,14 +65,12 @@ def train(checkpoint=None):
             {
                 "params": gen.to_w_noise.parameters(),
                 "lr": (learning_rate * 0.01),
-                "mult": 0.01,
             },
             {"params": gen.gen_blocks.parameters()},
             {"params": gen.to_rgbs.parameters()},
         ],
         lr=learning_rate,
         betas=(beta_1, beta_2),
-        weight_decay=gen_weight_decay,
     )
     ema = EMA(gen, 0.99)
     ema.register()
@@ -85,7 +83,7 @@ def train(checkpoint=None):
     )
     critic.train()
 
-    im_count = 5 * im_milestone
+    im_count = 2 * im_milestone
     iters = 0
     c_loss_history = []
     g_loss_history = []
@@ -126,13 +124,13 @@ def train(checkpoint=None):
 
                 critic_fake_pred = critic(fake_im.detach(), steps=steps, alpha=alpha)
 
-                c_loss = critic.get_r1_loss(
+                critic.zero_grad()
+                c_loss, grad_penalty = critic.get_r1_loss(
                     critic_fake_pred, real_im.detach(), steps, alpha
                 )
 
-                critic.zero_grad()
-
-                c_loss.backward(retain_graph=True)
+                # c_loss.backward()
+                # grad_penalty.backward()
 
                 critic_opt.step()
 
