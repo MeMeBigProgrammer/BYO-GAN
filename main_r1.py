@@ -10,6 +10,15 @@ from utils import (
     set_requires_grad,
 )
 
+"""
+TODOs:
+- gan.py cleanup
+- rename utils.py
+- get better image output
+- reimplement WGAN-GP
+- reimplement truncated noise
+"""
+
 # IMPORTANT CONSTANTS
 batch_size = 24
 # Progressive Growth block fade in constant; Each progression (fade-in/stabilization period) lasts X images
@@ -30,7 +39,7 @@ refresh_stat_step = 5
 final_image_size = 512
 
 # Create a constant set of noise vectors to show same image progression.
-show_noise = get_truncated_noise(4, 512, 0.75).to(device)
+show_noise = get_truncated_noise(25, 512, 0.75).to(device)
 
 # LOADING DATA
 transformation = transforms.Compose(
@@ -81,8 +90,6 @@ def train(checkpoint=None):
     iters = 0
     c_loss_history = []
     g_loss_history = []
-
-    show_noise = get_truncated_noise(16, 512, 0.75).to(device)
 
     if checkpoint is not None:
         save = torch.load(checkpoint)
@@ -176,7 +183,7 @@ def train(checkpoint=None):
                         save_to_disk=True,
                         filename="s-{}".format(iters),
                         title="Iteration {}".format(iters),
-                        num_display=16,
+                        num_display=25,
                     )
                 ema.restore()
 
