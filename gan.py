@@ -102,66 +102,6 @@ class EqualizedLinear(nn.Module):
         return self.linear(input)
 
 
-class BlurFunctionBackward(Function):
-    @staticmethod
-    def forward(ctx, grad_output, kernel, kernel_flip):
-        ctx.save_for_backward(kernel, kernel_flip)
-
-        grad_input = F.conv2d(
-            grad_output, kernel_flip, padding=1, groups=grad_output.shape[1]
-        )
-
-        return grad_input
-
-    @staticmethod
-    def backward(ctx, gradgrad_output):
-        kernel, kernel_flip = ctx.saved_tensors
-
-        grad_input = F.conv2d(
-            gradgrad_output, kernel, padding=1, groups=gradgrad_output.shape[1]
-        )
-
-        return grad_input, None, None
-
-
-class BlurFunction(Function):
-    @staticmethod
-    def forward(ctx, input, kernel, kernel_flip):
-        ctx.save_for_backward(kernel, kernel_flip)
-
-        output = F.conv2d(input, kernel, padding=1, groups=input.shape[1])
-
-        return output
-
-    @staticmethod
-    def backward(ctx, grad_output):
-        kernel, kernel_flip = ctx.saved_tensors
-
-        grad_input = BlurFunctionBackward.apply(grad_output, kernel, kernel_flip)
-
-        return grad_input, None, None
-
-
-blur = BlurFunction.apply
-
-
-class Blur(nn.Module):
-    def __init__(self, channel):
-        super().__init__()
-
-        weight = torch.tensor([[1, 2, 1], [2, 4, 2], [1, 2, 1]], dtype=torch.float32)
-        weight = weight.view(1, 1, 3, 3)
-        weight = weight / weight.sum()
-        weight_flip = torch.flip(weight, [2, 3])
-
-        self.register_buffer("weight", weight.repeat(channel, 1, 1, 1))
-        self.register_buffer("weight_flip", weight_flip.repeat(channel, 1, 1, 1))
-
-    def forward(self, input):
-        return blur(input, self.weight, self.weight_flip)
-        # return F.conv2d(input, self.weight, padding=1, groups=input.shape[1])
-
-
 class InjectSecondaryNoise(nn.Module):
     def __init__(self, channels):
         super().__init__()
@@ -228,7 +168,6 @@ class StyleGanBlock(nn.Module):
         self.does_upsample = does_upsample
 
         self.upsample = nn.Upsample(scale_factor=2, mode="bilinear")
-        self.blur = Blur(out_chan)
 
         if is_initial:
             self.constant = nn.Parameter(torch.randn(1, in_chan, 4, 4))
@@ -254,7 +193,6 @@ class StyleGanBlock(nn.Module):
             out = self.adain(self.activation(out), style)
         else:
             out = self.conv_1(x, style, noise)
-            out = self.blur(out)
 
         return self.conv_2(out, style, noise)
 
@@ -380,7 +318,6 @@ class CriticBlock(nn.Module):
             )
 
             self.conv_2 = nn.Sequential(
-                Blur(out_chan),
                 EqualizedConv2d(out_chan, out_chan, kernel_size=4),
                 nn.LeakyReLU(0.2),
                 nn.Flatten(),
@@ -395,7 +332,6 @@ class CriticBlock(nn.Module):
             )
 
             self.conv_2 = nn.Sequential(
-                Blur(out_chan),
                 EqualizedConv2d(out_chan, out_chan, kernel_size=3, padding=1),
                 nn.AvgPool2d(2),
                 nn.LeakyReLU(0.2),
@@ -523,19 +459,11 @@ class Critic(nn.Module):
 
         # Create gradient penalty.
 
-        grad_penalty = (
-            (gradient.view(gradient.size(0), -1).norm(2, dim=1) - 1) ** 2
-        ).mean()
+        gp = ((gradient.view(gradient.size(0), -1).norm(2, dim=1) - 1) ** 2).mean()
 
-        # Put it all together.
+        return -crit_real_pred.mean(), crit_fake_pred.mean(), c_lambda * gp
 
-        diff = -(crit_real_pred.mean() - crit_fake_pred.mean())
-
-        gp = c_lambda * grad_penalty
-
-        return diff + gp
-
-    def get_r1_loss(self, crit_fake_pred, real_im, steps, alpha):
+    def get_r1_loss(self, crit_fake_pred, real_im, steps, alpha, c_lambda=1):
         real_im.requires_grad = True
         crit_real_pred = self.forward(real_im, steps, alpha)
         real_predict = F.softplus(-crit_real_pred).mean()
@@ -546,11 +474,8 @@ class Critic(nn.Module):
         grad_penalty = (
             grad_real.view(grad_real.size(0), -1).norm(2, dim=1) ** 2
         ).mean()
-        grad_penalty = 0.02 / 2 * grad_penalty
+        grad_penalty = c_lambda / 2 * grad_penalty
 
         fake_predict = F.softplus(crit_fake_pred).mean()
-        # set gradients
-        fake_predict.backward()
-        real_predict.backward(retain_graph=True)
-        grad_penalty.backward()
-        return (grad_penalty + fake_predict + real_predict), grad_penalty
+
+        return real_predict, fake_predict, grad_penalty

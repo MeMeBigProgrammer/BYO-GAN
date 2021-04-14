@@ -126,14 +126,18 @@ def train(checkpoint=None):
                 critic_fake_pred = critic(fake_im.detach(), steps=steps, alpha=alpha)
 
                 critic.zero_grad()
-                c_loss, grad_penalty = critic.get_r1_loss(
-                    critic_fake_pred, real_im.detach(), steps, alpha
+
+                fake_predict, real_predict, grad_penalty = critic.get_r1_loss(
+                    critic_fake_pred, real_im.detach(), steps, alpha, c_lambda
                 )
 
-                # c_loss.backward()
-                # grad_penalty.backward()
+                real_predict.backward(retain_graph=True)
+                fake_predict.backward(retain_graph=True)
+                grad_penalty.backward()
 
                 critic_opt.step()
+
+                c_loss = fake_predict + real_predict + grad_penalty
 
                 im_count += cur_batch_size
 
