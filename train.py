@@ -18,6 +18,7 @@ TODOs:
     Remove PixelNorm?
 - reimplement WGAN-GP
 - Better Logging
+- batch_size rampdown?
 """
 
 # IMPORTANT CONSTANTS
