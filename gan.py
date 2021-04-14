@@ -187,10 +187,10 @@ class StyleGanBlock(nn.Module):
             x = self.upsample(x)
 
         if self.is_initial:
-            out = self.inject_noise(
-                self.constant.repeat(batch_size, 1, 1, 1), noise=noise
-            )
-            out = self.adain(self.activation(out), style)
+            out = self.constant.repeat(batch_size, 1, 1, 1)
+            out = self.inject_noise(out, noise=noise)
+            out = self.activation(out)
+            out = self.adain(out, style)
         else:
             out = self.conv_1(x, style, noise)
 
