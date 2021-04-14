@@ -1,2 +1,3 @@
 rm -rf ./checkpoints/*
-rm -rf ./output/*
+rm -rf ./output/*.png
+rm -rf ./output/samples/*

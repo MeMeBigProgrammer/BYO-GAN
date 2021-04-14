@@ -3,6 +3,11 @@ import matplotlib.pyplot as plt
 from torchvision import utils
 from scipy.stats import truncnorm
 from math import floor, modf, sqrt
+import os
+
+"""
+Displays a Pyplot image, or saves a grid of images.
+"""
 
 
 def display_image(
@@ -31,9 +36,38 @@ def display_image(
         plt.show()
 
 
-def get_truncated_noise(n_samples, z_dim, truncation):
-    # truncated_noise = truncnorm.rvs(-truncation, truncation, size=(n_samples, z_dim))
-    return torch.randn((n_samples, z_dim), requires_grad=True).cuda()
+"""
+Creates new subfolder in root directory.
+Saves each image seperately in full resolution.
+
+image_prefix: The string to append before the image index.
+"""
+
+
+def save_image_samples(
+    images, fold_name, root_dir="./output/samples", image_prefix="sample", max_images=16
+):
+    for index, image_tensor in enumerate(images):
+        folder_path = root_dir + f"/{fold_name}"
+
+        if not os.path.exists(folder_path):
+            os.makedirs(folder_path)
+
+        if index < max_images:
+            image_name = folder_path + f"/{image_prefix}-{index + 1}.png"
+            utils.save_image(image_tensor, image_name)
+
+
+def get_truncated_noise(n_samples, z_dim, trunc):
+    noise = (
+        torch.as_tensor(
+            truncnorm.rvs(-trunc, trunc, size=(n_samples, z_dim)),
+            dtype=torch.float,
+        )
+        .cuda()
+        .requires_grad_()
+    )
+    return noise
 
 
 def get_progression_step(im_count, im_milestone, max_steps=8):

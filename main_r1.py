@@ -3,20 +3,21 @@ from torchvision import datasets, transforms
 from tqdm.auto import tqdm
 
 from gan import Generator, Critic, EMA
-from utils import (
+from helper import (
     get_truncated_noise,
     display_image,
     get_progression_step,
     set_requires_grad,
+    save_image_samples,
 )
 
 """
 TODOs:
+- CLI arguments
 - gan.py cleanup
-- rename utils.py
-- get better image output
+    Remove PixelNorm?
 - reimplement WGAN-GP
-- reimplement truncated noise
+- Better Logging
 """
 
 # IMPORTANT CONSTANTS
@@ -56,7 +57,7 @@ anime_images = datasets.ImageFolder("./data/anime", transformation)
 art_images = datasets.ImageFolder("./data/art", transformation)
 
 images = torch.utils.data.DataLoader(
-    art_images, batch_size=batch_size, shuffle=True, num_workers=3
+    anime_images, batch_size=batch_size, shuffle=True, num_workers=2
 )
 
 
@@ -117,27 +118,33 @@ def train(checkpoint=None):
 
                 fake_im = gen(z_noise, steps=steps, alpha=alpha)
 
-                real_im = torch.nn.functional.interpolate(
-                    real_im,
-                    size=(fake_im.shape[2], fake_im.shape[3]),
-                    mode="bilinear",
-                ).to(device, dtype=torch.float)
+                real_im = (
+                    torch.nn.functional.interpolate(
+                        real_im,
+                        size=(fake_im.shape[2], fake_im.shape[3]),
+                        mode="bilinear",
+                    )
+                    .to(device, dtype=torch.float)
+                    .requires_grad_()
+                )
 
-                critic_fake_pred = critic(fake_im.detach(), steps=steps, alpha=alpha)
+                critic_fake_pred = critic(fake_im.detach(), steps, alpha)
+
+                critic_real_pred = critic(real_im, steps, alpha)
 
                 critic.zero_grad()
 
-                fake_predict, real_predict, grad_penalty = critic.get_r1_loss(
-                    critic_fake_pred, real_im.detach(), steps, alpha, c_lambda
+                c_loss = critic.get_r1_loss(
+                    critic_fake_pred,
+                    critic_real_pred,
+                    real_im,
+                    fake_im,
+                    steps,
+                    alpha,
+                    c_lambda,
                 )
 
-                real_predict.backward(retain_graph=True)
-                fake_predict.backward(retain_graph=True)
-                grad_penalty.backward()
-
                 critic_opt.step()
-
-                c_loss = fake_predict + real_predict + grad_penalty
 
                 im_count += cur_batch_size
 
@@ -178,6 +185,7 @@ def train(checkpoint=None):
                     refresh=True,
                 )
 
+            ema.apply_shadow()
             if iters > 0 and iters % display_step == 0:
                 ema.apply_shadow()
                 with torch.no_grad():
@@ -189,7 +197,6 @@ def train(checkpoint=None):
                         title="Iteration {}".format(iters),
                         num_display=25,
                     )
-                ema.restore()
 
             if iters > 0 and iters % checkpoint_step == 0:
                 torch.save(
@@ -198,9 +205,12 @@ def train(checkpoint=None):
                         "critic": critic.state_dict(),
                         "iter": iters,
                         "im_count": im_count,
+                        "exponential_average_shadow": ema.state_dict(),
                     },
                     f"./checkpoints/chk-{iters}.pth",
                 )
+
+            ema.restore()
 
 
 if __name__ == "__main__":

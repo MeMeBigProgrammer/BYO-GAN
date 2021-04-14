@@ -3,7 +3,6 @@
 import torch
 from torch import nn
 import torch.nn.functional as F
-from torch.autograd import Function
 from math import sqrt
 
 
@@ -281,7 +280,7 @@ class Generator(nn.Module):
             out = gen_block.forward(out, style, len(z_noise), noise=noise[index])
 
             if (index + 1) >= steps:  # final step
-                if alpha is not None and index > 0:  # mix final image and return
+                if alpha is not None and index > 0:  # mix final image and return.
 
                     # clamp alpha to 0 -> 1
                     alpha = min(1.0, max(0.0, alpha))
@@ -297,7 +296,7 @@ class Generator(nn.Module):
                 else:  # No fad in.
                     return to_rgb(out)
 
-    def get_loss(self, crit_fake_pred):
+    def get_wgan_loss(self, crit_fake_pred):
         return -crit_fake_pred.mean()
 
     def get_r1_loss(self, crit_fake_pred):
@@ -430,23 +429,23 @@ class Critic(nn.Module):
             EqualizedConv2d(image_chan, out_chan, kernel_size=1), nn.LeakyReLU(0.2)
         )
 
-    def get_loss(
+    def get_wgan_loss(
         self,
         crit_fake_pred,
         crit_real_pred,
-        real_images,
-        fake_images,
+        real_im,
+        fake_im,
         steps,
         alpha,
-        c_lambda,
+        c_lambda=1,
     ):
 
         epsilon = torch.rand(
-            real_images.shape[0], 1, 1, 1, device=self.device, requires_grad=True
+            real_im.shape[0], 1, 1, 1, device=self.device, requires_grad=True
         )
 
         # Create mixed images and calculate gradient.
-        mixed_images = real_images * epsilon + (1 - epsilon) * fake_images
+        mixed_images = real_im * epsilon + (1 - epsilon) * fake_im
         mixed_image_scores = self.forward(mixed_images, steps=steps, alpha=alpha)
 
         gradient = torch.autograd.grad(
@@ -461,11 +460,15 @@ class Critic(nn.Module):
 
         gp = ((gradient.view(gradient.size(0), -1).norm(2, dim=1) - 1) ** 2).mean()
 
-        return -crit_real_pred.mean(), crit_fake_pred.mean(), c_lambda * gp
+        wgan_loss = -crit_real_pred.mean() + crit_fake_pred.mean() + (c_lambda * gp)
 
-    def get_r1_loss(self, crit_fake_pred, real_im, steps, alpha, c_lambda=1):
-        real_im.requires_grad = True
-        crit_real_pred = self.forward(real_im, steps, alpha)
+        wgan_loss.backward()
+
+        return wgan_loss
+
+    def get_r1_loss(
+        self, crit_fake_pred, crit_real_pred, real_im, fake_im, steps, alpha, c_lambda=1
+    ):
         real_predict = F.softplus(-crit_real_pred).mean()
 
         grad_real = torch.autograd.grad(
@@ -478,4 +481,8 @@ class Critic(nn.Module):
 
         fake_predict = F.softplus(crit_fake_pred).mean()
 
-        return real_predict, fake_predict, grad_penalty
+        r1_loss = real_predict + fake_predict + grad_penalty
+
+        r1_loss.backward()
+
+        return r1_loss
