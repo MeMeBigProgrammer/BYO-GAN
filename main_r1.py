@@ -1,4 +1,4 @@
-import sys, gc, math
+import sys, gc, math, random
 from datetime import datetime
 import torch
 import torchvision
@@ -7,7 +7,7 @@ from torchvision import datasets, transforms, utils
 import matplotlib.pyplot as plt
 from tqdm.auto import tqdm
 
-from gan import Generator, Critic
+from gan import Generator, Critic, EMA
 from utils import (
     get_truncated_noise,
     display_image,
@@ -16,7 +16,7 @@ from utils import (
 )
 
 # IMPORTANT CONSTANTS
-batch_size = 32
+batch_size = 24
 # Progressive Growth block fade in constant; Each progression (fade-in/stabilization period) lasts X images
 im_milestone = 110 * 1000
 c_lambda = 10
@@ -24,13 +24,13 @@ noise_size = 512
 device = "cuda"
 beta_1 = 0
 beta_2 = 0.99
-learning_rate = 0.0002
+learning_rate = 0.002
 critic_repeats = 1
 gen_weight_decay = 0.999
 
 num_epochs = 500
-display_step = 100
-checkpoint_step = 1000
+display_step = 250
+checkpoint_step = 2000
 
 final_image_size = 512
 
@@ -43,10 +43,9 @@ show_noise = get_truncated_noise(4, 512, 0.75).to(device)
 transformation = transforms.Compose(
     [
         transforms.Resize((final_image_size, final_image_size)),
-        transforms.CenterCrop((final_image_size, final_image_size)),
         transforms.RandomHorizontalFlip(),
         transforms.ToTensor(),
-        transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
+        transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5), inplace=True),
         transforms.ConvertImageDtype(float),
     ]
 )
@@ -54,7 +53,7 @@ transformation = transforms.Compose(
 anime_images = datasets.ImageFolder("./data/anime", transformation)
 
 images = torch.utils.data.DataLoader(
-    anime_images, batch_size=batch_size, shuffle=True, drop_last=False, num_workers=4
+    anime_images, batch_size=batch_size, shuffle=True, drop_last=False, num_workers=3
 )
 
 
@@ -63,14 +62,18 @@ def train(checkpoint=None):
     gen = Generator().to(device)
     gen_opt = torch.optim.Adam(
         [
-            {"params": gen.to_w_noise.parameters(), "lr": (learning_rate * 0.01)},
+            {
+                "params": gen.to_w_noise.parameters(),
+                "lr": (learning_rate * 0.01),
+            },
             {"params": gen.gen_blocks.parameters()},
             {"params": gen.to_rgbs.parameters()},
         ],
         lr=learning_rate,
         betas=(beta_1, beta_2),
-        weight_decay=gen_weight_decay,
     )
+    ema = EMA(gen, 0.99)
+    ema.register()
     gen.train()
 
     # Initialize Critic
@@ -80,7 +83,7 @@ def train(checkpoint=None):
     )
     critic.train()
 
-    im_count = 0 * im_milestone
+    im_count = 2 * im_milestone
     iters = 0
     c_loss_history = []
     g_loss_history = []
@@ -119,23 +122,15 @@ def train(checkpoint=None):
                     mode="bilinear",
                 ).to(device, dtype=torch.float)
 
-                critic_fake_pred = critic(fake_im, steps=steps, alpha=alpha)
-
-                critic_real_pred = critic(real_im, steps=steps, alpha=alpha)
-
-                c_loss = critic.get_loss(
-                    critic_fake_pred,
-                    critic_real_pred,
-                    real_im,
-                    fake_im,
-                    steps,
-                    alpha,
-                    c_lambda,
-                )
+                critic_fake_pred = critic(fake_im.detach(), steps=steps, alpha=alpha)
 
                 critic.zero_grad()
+                c_loss, grad_penalty = critic.get_r1_loss(
+                    critic_fake_pred, real_im.detach(), steps, alpha
+                )
 
-                c_loss.backward(retain_graph=True)
+                # c_loss.backward()
+                # grad_penalty.backward()
 
                 critic_opt.step()
 
@@ -154,11 +149,12 @@ def train(checkpoint=None):
 
             critic_fake_pred = critic(fake_images, steps=steps, alpha=alpha)
 
-            g_loss = gen.get_loss(critic_fake_pred)
+            g_loss = gen.get_r1_loss(critic_fake_pred)
 
             gen.zero_grad()
             g_loss.backward()
             gen_opt.step()
+            ema.update()
 
             g_loss_history.append(g_loss.item())
 
@@ -173,11 +169,12 @@ def train(checkpoint=None):
                 )
 
                 pbar.set_description(
-                    "g_loss: {0:.3}   c_loss: {1:.3}".format(avg_g_loss, avg_c_loss),
+                    f"g_loss: {avg_g_loss:.3}  c_loss: {avg_c_loss:.3}  im_c: {im_count}",
                     refresh=True,
                 )
 
             if iters > 0 and iters % display_step == 0:
+                ema.apply_shadow()
                 with torch.no_grad():
                     examples = gen(show_noise, alpha=alpha, steps=steps)
                     display_image(
@@ -187,8 +184,9 @@ def train(checkpoint=None):
                         title="Iteration {}".format(iters),
                         num_display=16,
                     )
+                ema.restore()
 
-            if iters > 0 and iters % 2500 == 0:
+            if iters > 0 and iters % checkpoint_step == 0:
                 torch.save(
                     {
                         "gen": gen.state_dict(),
