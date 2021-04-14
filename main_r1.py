@@ -1,10 +1,5 @@
-import sys, gc, math, random
-from datetime import datetime
 import torch
-import torchvision
-from torch import nn
-from torchvision import datasets, transforms, utils
-import matplotlib.pyplot as plt
+from torchvision import datasets, transforms
 from tqdm.auto import tqdm
 
 from gan import Generator, Critic, EMA
@@ -18,7 +13,7 @@ from utils import (
 # IMPORTANT CONSTANTS
 batch_size = 24
 # Progressive Growth block fade in constant; Each progression (fade-in/stabilization period) lasts X images
-im_milestone = 110 * 1000
+im_milestone = 125 * 1000
 c_lambda = 10
 noise_size = 512
 device = "cuda"
@@ -26,15 +21,13 @@ beta_1 = 0
 beta_2 = 0.99
 learning_rate = 0.002
 critic_repeats = 1
-gen_weight_decay = 0.999
 
 num_epochs = 500
 display_step = 250
 checkpoint_step = 2000
+refresh_stat_step = 5
 
 final_image_size = 512
-
-refresh_stat_step = 5
 
 # Create a constant set of noise vectors to show same image progression.
 show_noise = get_truncated_noise(4, 512, 0.75).to(device)
@@ -51,9 +44,10 @@ transformation = transforms.Compose(
 )
 
 anime_images = datasets.ImageFolder("./data/anime", transformation)
+art_images = datasets.ImageFolder("./data/art", transformation)
 
 images = torch.utils.data.DataLoader(
-    anime_images, batch_size=batch_size, shuffle=True, drop_last=False, num_workers=3
+    art_images, batch_size=batch_size, shuffle=True, num_workers=3
 )
 
 

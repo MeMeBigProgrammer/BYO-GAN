@@ -1,8 +1,6 @@
 import torch
-import torchvision
-from torch import nn
-from torchvision import datasets, transforms, utils
 import matplotlib.pyplot as plt
+from torchvision import utils
 from scipy.stats import truncnorm
 from math import floor, modf, sqrt
 
