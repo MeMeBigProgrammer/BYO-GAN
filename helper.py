@@ -70,25 +70,6 @@ def get_truncated_noise(n_samples, z_dim, trunc):
     return noise
 
 
-def get_progression_step(im_count, im_milestone, max_steps=8):
-    count = float(im_count / im_milestone)
-
-    floored_count = floor(count)
-
-    steps = (floored_count) / 2 + 1
-    is_even = floored_count % 2 == 0
-
-    if steps >= max_steps:
-        return (None, max_steps)
-
-    if steps <= 1:
-        return (None, 1)
-    elif is_even:
-        return (None, int(steps))
-    else:
-        return (round(modf(count)[0], 5), int(steps + 1))
-
-
 def set_requires_grad(model, requires_grad: bool):
     for p in model.parameters():
         p.requires_grad = requires_grad

@@ -6,7 +6,6 @@ from gan import Generator, Critic, EMA
 from helper import (
     get_truncated_noise,
     display_image,
-    get_progression_step,
     set_requires_grad,
     save_image_samples,
 )
@@ -22,7 +21,7 @@ TODOs:
 """
 
 # IMPORTANT CONSTANTS
-batch_size = 24
+batch_size = 5
 # Progressive Growth block fade in constant; Each progression (fade-in/stabilization period) lasts X images
 im_milestone = 125 * 1000
 c_lambda = 10
@@ -61,6 +60,15 @@ images = torch.utils.data.DataLoader(
     anime_images, batch_size=batch_size, shuffle=True, num_workers=2
 )
 
+# 4, 8, 16, 32, 64, 128, 256, 512
+epoch_progresson = [1, 40, 32, 30, 25, 25, 20, 15]
+
+batch_progression = [24, 24, 24, 20, 16, 10, 5, 5]
+
+fade_in_percentage = 0.5  # Percentage of each step will be a fade in.
+
+num_images = len(anime_images)
+
 
 def train(checkpoint=None):
     # Initialize Generator
@@ -88,7 +96,6 @@ def train(checkpoint=None):
     )
     critic.train()
 
-    im_count = 2 * im_milestone
     iters = 0
     c_loss_history = []
     g_loss_history = []
@@ -100,118 +107,128 @@ def train(checkpoint=None):
         iters = save["iter"]
         im_count = save["im_count"]
 
-    for epoch in range(num_epochs):
+    for index, step_epochs in enumerate(epoch_progresson):
 
-        pbar = tqdm(images)
+        steps = index + 1
+        im_count = 0
 
-        for real_im, _ in pbar:
-            cur_batch_size = len(real_im)
+        for epoch in range(step_epochs):
 
-            set_requires_grad(critic, True)
-            set_requires_grad(gen, False)
+            pbar = tqdm(images)
 
-            for i in range(critic_repeats):
-                z_noise = get_truncated_noise(cur_batch_size, noise_size, 0.75).to(
-                    device
-                )
+            for real_im, _ in pbar:
+                cur_batch_size = len(real_im)
 
-                alpha, steps = get_progression_step(im_count, im_milestone)
+                set_requires_grad(critic, True)
+                set_requires_grad(gen, False)
 
-                fake_im = gen(z_noise, steps=steps, alpha=alpha)
+                for i in range(critic_repeats):
+                    z_noise = get_truncated_noise(cur_batch_size, noise_size, 0.75).to(
+                        device
+                    )
 
-                real_im = (
-                    torch.nn.functional.interpolate(
+                    alpha = im_count / (fade_in_percentage * step_epochs * num_images)
+
+                    if alpha > 1.0:
+                        alpha = None
+
+                    fake_im = gen(z_noise, steps=steps, alpha=alpha)
+
+                    real_im = (
+                        torch.nn.functional.interpolate(
+                            real_im,
+                            size=(fake_im.shape[2], fake_im.shape[3]),
+                            mode="bilinear",
+                        )
+                        .to(device, dtype=torch.float)
+                        .requires_grad_()
+                    )
+
+                    critic_fake_pred = critic(fake_im.detach(), steps, alpha)
+
+                    critic_real_pred = critic(real_im, steps, alpha)
+
+                    critic.zero_grad()
+
+                    c_loss = critic.get_r1_loss(
+                        critic_fake_pred,
+                        critic_real_pred,
                         real_im,
-                        size=(fake_im.shape[2], fake_im.shape[3]),
-                        mode="bilinear",
+                        fake_im,
+                        steps,
+                        alpha,
+                        c_lambda,
                     )
-                    .to(device, dtype=torch.float)
-                    .requires_grad_()
-                )
 
-                critic_fake_pred = critic(fake_im.detach(), steps, alpha)
+                    critic_opt.step()
 
-                critic_real_pred = critic(real_im, steps, alpha)
+                    im_count += cur_batch_size
 
-                critic.zero_grad()
+                    c_loss_history.append(c_loss.item())
 
-                c_loss = critic.get_r1_loss(
-                    critic_fake_pred,
-                    critic_real_pred,
-                    real_im,
-                    fake_im,
-                    steps,
-                    alpha,
-                    c_lambda,
-                )
+                set_requires_grad(critic, False)
+                set_requires_grad(gen, True)
 
-                critic_opt.step()
+                noise = get_truncated_noise(cur_batch_size, noise_size, 0.75).to(device)
 
-                im_count += cur_batch_size
+                alpha = im_count / (fade_in_percentage * step_epochs * num_images)
 
-                c_loss_history.append(c_loss.item())
+                if alpha > 1.0:
+                    alpha = None
 
-            set_requires_grad(critic, False)
-            set_requires_grad(gen, True)
+                fake_images = gen(noise, steps=steps, alpha=alpha)
 
-            noise = get_truncated_noise(cur_batch_size, noise_size, 0.75).to(device)
+                critic_fake_pred = critic(fake_images, steps=steps, alpha=alpha)
 
-            alpha, steps = get_progression_step(im_count, im_milestone)
+                g_loss = gen.get_r1_loss(critic_fake_pred)
 
-            fake_images = gen(noise, steps=steps, alpha=alpha)
+                gen.zero_grad()
+                g_loss.backward()
+                gen_opt.step()
+                ema.update()
 
-            critic_fake_pred = critic(fake_images, steps=steps, alpha=alpha)
+                g_loss_history.append(g_loss.item())
 
-            g_loss = gen.get_r1_loss(critic_fake_pred)
+                iters += 1
 
-            gen.zero_grad()
-            g_loss.backward()
-            gen_opt.step()
-            ema.update()
+                if iters > 0 and iters % refresh_stat_step == 0:
+                    avg_c_loss = (
+                        sum(c_loss_history[-refresh_stat_step:]) / refresh_stat_step
+                    )
+                    avg_g_loss = (
+                        sum(g_loss_history[-refresh_stat_step:]) / refresh_stat_step
+                    )
 
-            g_loss_history.append(g_loss.item())
+                    pbar.set_description(
+                        f"g_loss: {avg_g_loss:.3}  c_loss: {avg_c_loss:.3}  im_c: {im_count}",
+                        refresh=True,
+                    )
 
-            iters += 1
-
-            if iters > 0 and iters % refresh_stat_step == 0:
-                avg_c_loss = (
-                    sum(c_loss_history[-refresh_stat_step:]) / refresh_stat_step
-                )
-                avg_g_loss = (
-                    sum(g_loss_history[-refresh_stat_step:]) / refresh_stat_step
-                )
-
-                pbar.set_description(
-                    f"g_loss: {avg_g_loss:.3}  c_loss: {avg_c_loss:.3}  im_c: {im_count}",
-                    refresh=True,
-                )
-
-            ema.apply_shadow()
-            if iters > 0 and iters % display_step == 0:
                 ema.apply_shadow()
-                with torch.no_grad():
-                    examples = gen(show_noise, alpha=alpha, steps=steps)
-                    display_image(
-                        torch.clamp(examples, 0, 1),
-                        save_to_disk=True,
-                        filename="s-{}".format(iters),
-                        title="Iteration {}".format(iters),
-                        num_display=25,
+                if iters > 0 and iters % display_step == 0:
+                    ema.apply_shadow()
+                    with torch.no_grad():
+                        examples = gen(show_noise, alpha=alpha, steps=steps)
+                        display_image(
+                            torch.clamp(examples, 0, 1),
+                            save_to_disk=True,
+                            filename="s-{}".format(iters),
+                            title="Iteration {}".format(iters),
+                            num_display=25,
+                        )
+
+                if iters > 0 and iters % checkpoint_step == 0:
+                    torch.save(
+                        {
+                            "gen": gen.state_dict(),
+                            "critic": critic.state_dict(),
+                            "iter": iters,
+                            "im_count": im_count,
+                        },
+                        f"./checkpoints/chk-{iters}.pth",
                     )
 
-            if iters > 0 and iters % checkpoint_step == 0:
-                torch.save(
-                    {
-                        "gen": gen.state_dict(),
-                        "critic": critic.state_dict(),
-                        "iter": iters,
-                        "im_count": im_count,
-                        "exponential_average_shadow": ema.state_dict(),
-                    },
-                    f"./checkpoints/chk-{iters}.pth",
-                )
-
-            ema.restore()
+                ema.restore()
 
 
 if __name__ == "__main__":
