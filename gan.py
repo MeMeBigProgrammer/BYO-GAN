@@ -434,7 +434,6 @@ class Critic(nn.Module):
         crit_fake_pred,
         crit_real_pred,
         real_im,
-        fake_im,
         steps,
         alpha,
         c_lambda=1,

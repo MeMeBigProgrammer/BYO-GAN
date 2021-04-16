@@ -1,5 +1,4 @@
 import torch
-from torchvision import datasets, transforms
 from tqdm.auto import tqdm
 
 from gan import Generator, Critic, EMA
@@ -10,20 +9,7 @@ from helper import (
     save_image_samples,
 )
 
-"""
-TODOs:
-- CLI arguments
-- gan.py cleanup
-    Remove PixelNorm?
-- reimplement WGAN-GP
-- Better Logging
-- batch_size rampdown?
-"""
-
 # IMPORTANT CONSTANTS
-batch_size = 5
-# Progressive Growth block fade in constant; Each progression (fade-in/stabilization period) lasts X images
-im_milestone = 125 * 1000
 c_lambda = 10
 noise_size = 512
 device = "cuda"
@@ -39,38 +25,16 @@ refresh_stat_step = 5
 
 final_image_size = 512
 
-# Create a constant set of noise vectors to show same image progression.
-show_noise = get_truncated_noise(25, 512, 0.75).to(device)
 
-# LOADING DATA
-transformation = transforms.Compose(
-    [
-        transforms.Resize((final_image_size, final_image_size)),
-        transforms.RandomHorizontalFlip(),
-        transforms.ToTensor(),
-        transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5), inplace=True),
-        transforms.ConvertImageDtype(float),
-    ]
-)
+def train(
+    images,
+    epoch_progresson,
+    batch_progression,
+    fade_in_percentage,
+    checkpoint=None,
+    use_r1_loss=True,
+):
 
-anime_images = datasets.ImageFolder("./data/anime", transformation)
-art_images = datasets.ImageFolder("./data/art", transformation)
-
-images = torch.utils.data.DataLoader(
-    anime_images, batch_size=batch_size, shuffle=True, num_workers=2
-)
-
-# 4, 8, 16, 32, 64, 128, 256, 512
-epoch_progresson = [1, 40, 32, 30, 25, 25, 20, 15]
-
-batch_progression = [24, 24, 24, 20, 16, 10, 5, 5]
-
-fade_in_percentage = 0.5  # Percentage of each step will be a fade in.
-
-num_images = len(anime_images)
-
-
-def train(checkpoint=None):
     # Initialize Generator
     gen = Generator().to(device)
     gen_opt = torch.optim.Adam(
@@ -96,6 +60,10 @@ def train(checkpoint=None):
     )
     critic.train()
 
+    # Create a constant set of noise vectors to show same image progression.
+    show_noise = get_truncated_noise(25, 512, 0.75).to(device)
+
+    # Some other variables to keep track of.
     iters = 0
     c_loss_history = []
     g_loss_history = []
@@ -106,15 +74,31 @@ def train(checkpoint=None):
         critic.load_state_dict(save["critic"])
         iters = save["iter"]
         im_count = save["im_count"]
+        last_step = save["step"]
+    else:
+        last_step = None
 
     for index, step_epochs in enumerate(epoch_progresson):
 
-        steps = index + 1
+        if last_step is not None and index + 1 < last_step:
+            continue
+
+        steps = int(index + 1)
         im_count = 0
+        dataset = torch.utils.data.DataLoader(
+            images,
+            batch_size=batch_progression[index],
+            shuffle=True,
+            num_workers=2,
+        )
+
+        fade_in = fade_in_percentage * step_epochs * len(dataset)
+
+        print(f"STARTING STEP #{steps}")
 
         for epoch in range(step_epochs):
 
-            pbar = tqdm(images)
+            pbar = tqdm(dataset)
 
             for real_im, _ in pbar:
                 cur_batch_size = len(real_im)
@@ -127,7 +111,7 @@ def train(checkpoint=None):
                         device
                     )
 
-                    alpha = im_count / (fade_in_percentage * step_epochs * num_images)
+                    alpha = im_count / fade_in
 
                     if alpha > 1.0:
                         alpha = None
@@ -150,15 +134,26 @@ def train(checkpoint=None):
 
                     critic.zero_grad()
 
-                    c_loss = critic.get_r1_loss(
-                        critic_fake_pred,
-                        critic_real_pred,
-                        real_im,
-                        fake_im,
-                        steps,
-                        alpha,
-                        c_lambda,
-                    )
+                    if use_r1_loss:
+
+                        c_loss = critic.get_r1_loss(
+                            critic_fake_pred,
+                            critic_real_pred,
+                            real_im,
+                            fake_im,
+                            steps,
+                            alpha,
+                            c_lambda,
+                        )
+                    else:
+                        c_loss = critic.get_wgan_loss(
+                            critic_fake_pred,
+                            critic_real_pred,
+                            real_im,
+                            steps,
+                            alpha,
+                            c_lambda,
+                        )
 
                     critic_opt.step()
 
@@ -171,16 +166,22 @@ def train(checkpoint=None):
 
                 noise = get_truncated_noise(cur_batch_size, noise_size, 0.75).to(device)
 
-                alpha = im_count / (fade_in_percentage * step_epochs * num_images)
+                alpha = im_count / fade_in
 
                 if alpha > 1.0:
                     alpha = None
 
                 fake_images = gen(noise, steps=steps, alpha=alpha)
 
-                critic_fake_pred = critic(fake_images, steps=steps, alpha=alpha)
+                critic_fake_pred = critic(fake_images, steps, alpha)
 
-                g_loss = gen.get_r1_loss(critic_fake_pred)
+                if use_r1_loss:
+
+                    g_loss = gen.get_r1_loss(critic_fake_pred)
+
+                else:
+
+                    g_loss = gen.get_wgan_loss(critic_fake_pred)
 
                 gen.zero_grad()
                 g_loss.backward()
@@ -224,15 +225,9 @@ def train(checkpoint=None):
                             "critic": critic.state_dict(),
                             "iter": iters,
                             "im_count": im_count,
+                            "step": steps,
                         },
                         f"./checkpoints/chk-{iters}.pth",
                     )
 
                 ema.restore()
-
-
-if __name__ == "__main__":
-    if torch.device("cuda" if torch.cuda.is_available() else "cpu").type == "cuda":
-        print(torch.cuda.get_device_name(0))
-
-    train(checkpoint=None)

@@ -2,11 +2,13 @@ import torch
 import matplotlib.pyplot as plt
 from torchvision import utils
 from scipy.stats import truncnorm
-from math import floor, modf, sqrt
+from math import sqrt
 import os
 
 """
-Displays a Pyplot image, or saves a grid of images.
+Displays/Saves a single image or multiple images in a grid using pyplot.
+
+Function output image is limited in resolution and therefore quality.
 """
 
 
