@@ -1,0 +1,17 @@
+[Reference-Default-Variables]
+batch_progression=24,16,16,16,12,10,5,5
+epoch_progression=10,20,20,30,30,20,20,15
+fade_percentage=0.5
+
+[anime]
+epoch_progression=1,20,20,30,30,20,20,15
+data=./data/anime
+
+[abstract-art]
+batch_progression=24,16,16,16,12,10,5,5
+epoch_progression=5,10,10,20,20,20,20,15
+data=./data/art
+fade_percentage=0.45
+
+[training]
+key=data

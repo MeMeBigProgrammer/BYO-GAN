@@ -21,6 +21,7 @@ critic_repeats = 1
 num_epochs = 500
 display_step = 250
 checkpoint_step = 2000
+sample_step = 1000
 refresh_stat_step = 5
 
 final_image_size = 512
@@ -75,8 +76,10 @@ def train(
         iters = save["iter"]
         im_count = save["im_count"]
         last_step = save["step"]
+        last_epoch = save["epoch"]
     else:
         last_step = None
+        last_epoch = None
 
     for index, step_epochs in enumerate(epoch_progresson):
 
@@ -97,6 +100,11 @@ def train(
         print(f"STARTING STEP #{steps}")
 
         for epoch in range(step_epochs):
+
+            if last_epoch is not None and epoch < last_epoch:
+                continue
+            else:
+                last_epoch = None
 
             pbar = tqdm(dataset)
 
@@ -201,15 +209,14 @@ def train(
                     )
 
                     pbar.set_description(
-                        f"g_loss: {avg_g_loss:.3}  c_loss: {avg_c_loss:.3}  im_c: {im_count}",
+                        f"g_loss: {avg_g_loss:.3}  c_loss: {avg_c_loss:.3}  epoch: {epoch}",
                         refresh=True,
                     )
 
                 ema.apply_shadow()
-                if iters > 0 and iters % display_step == 0:
-                    ema.apply_shadow()
-                    with torch.no_grad():
-                        examples = gen(show_noise, alpha=alpha, steps=steps)
+                with torch.no_grad():
+                    examples = gen(show_noise, alpha=alpha, steps=steps)
+                    if iters > 0 and iters % display_step == 0:
                         display_image(
                             torch.clamp(examples, 0, 1),
                             save_to_disk=True,
@@ -218,16 +225,37 @@ def train(
                             num_display=25,
                         )
 
-                if iters > 0 and iters % checkpoint_step == 0:
-                    torch.save(
-                        {
-                            "gen": gen.state_dict(),
-                            "critic": critic.state_dict(),
-                            "iter": iters,
-                            "im_count": im_count,
-                            "step": steps,
-                        },
-                        f"./checkpoints/chk-{iters}.pth",
-                    )
+                    if iters > 0 and iters % checkpoint_step == 0:
+                        torch.save(
+                            {
+                                "gen": gen.state_dict(),
+                                "critic": critic.state_dict(),
+                                "iter": iters,
+                                "im_count": im_count,
+                                "step": steps,
+                                "epoch": epoch,
+                            },
+                            f"./checkpoints/chk-{iters}.pth",
+                        )
+
+                    if iters > 0 and iters % sample_step == 0:
+                        save_image_samples(examples, f"step-{iters}", image_prefix="s")
 
                 ema.restore()
+
+    # TRAINING FINISHED - save final set of samples and save model
+    ema.apply_shadow()
+    examples = gen(show_noise, alpha=alpha, steps=steps)
+    save_image_samples(examples, "FINAL", image_prefix="F")
+    torch.save(
+        {
+            "gen": gen.state_dict(),
+            "critic": critic.state_dict(),
+            "iter": iters,
+            "im_count": im_count,
+            "step": steps,
+            "epoch": epoch,
+        },
+        "./checkpoints/FINAL.pth",
+    )
+    print("TRAINING IS FINISHED - MODEL SAVED!")
