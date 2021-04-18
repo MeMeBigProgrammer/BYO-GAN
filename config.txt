@@ -1,7 +1,10 @@
-[Reference-Default-Variables]
+[DEFAULT] 
+;For reference only, do not edit!
+;4, 8, 16, 32, 64, 128, 256, 512
 batch_progression=24,16,16,16,12,10,5,5
 epoch_progression=10,20,20,30,30,20,20,15
 fade_percentage=0.5
+data=dir path
 
 [anime]
 epoch_progression=1,20,20,30,30,20,20,15
