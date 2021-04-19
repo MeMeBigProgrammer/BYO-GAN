@@ -27,6 +27,9 @@ transformation = transforms.Compose(
 # Check config file for different presets.
 config_section = "anime"
 
+# config section for the training constants
+training_constants_section = "training"
+
 if __name__ == "__main__":
     # Check Cuda Driver and Devices are good.
     if torch.device("cuda" if torch.cuda.is_available() else "cpu").type == "cuda":
@@ -56,6 +59,9 @@ if __name__ == "__main__":
     # Path to dataset.
     data_path = settings.get("data", None)
 
+    # Load training constants.
+    constants = config["training"]
+
     if data_path is None:
         raise ValueError("Data path cannot be NoneType!")
 
@@ -66,5 +72,6 @@ if __name__ == "__main__":
         epoch_progresson,
         batch_progression,
         fade_percentage,
+        constants,
         checkpoint=None,
     )

@@ -17,4 +17,15 @@ data=./data/art
 fade_percentage=0.45
 
 [training]
-key=data
+gradient_lambda=10
+noise_length=512
+device=cuda
+beta_1=0.00
+beta_2=0.99
+lr=0.002
+critic_repeats=1
+ema_decay=0.99
+display_step=250
+checkpoint_step=2000
+sample_step =1000
+refresh_stat_step=5

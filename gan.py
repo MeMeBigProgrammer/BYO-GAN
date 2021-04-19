@@ -139,7 +139,7 @@ class AdaINBlock(nn.Module):
         return out
 
 
-class StyleConvBlock(nn.Module):
+class StyleConvBlock(nn.Module):  # refactor so constant sits here.
     def __init__(self, in_chan, out_chan):
         super().__init__()
 

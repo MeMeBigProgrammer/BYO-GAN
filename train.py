@@ -9,32 +9,30 @@ from helper import (
     save_image_samples,
 )
 
-# IMPORTANT CONSTANTS
-c_lambda = 10
-noise_size = 512
-device = "cuda"
-beta_1 = 0
-beta_2 = 0.99
-learning_rate = 0.002
-critic_repeats = 1
-
-num_epochs = 500
-display_step = 250
-checkpoint_step = 2000
-sample_step = 1000
-refresh_stat_step = 5
-
-final_image_size = 512
-
 
 def train(
     images,
     epoch_progresson,
     batch_progression,
     fade_in_percentage,
+    constants,
     checkpoint=None,
     use_r1_loss=True,
 ):
+    # Load constants
+    c_lambda = int(constants.get("gradient_lambda", 10))
+    noise_size = int(constants.get("noise_length", 512))
+    device = constants.get("device", "cuda")
+    beta_1 = float(constants.get("beta_1", 0.00))
+    beta_2 = float(constants.get("beta_2", 0.99))
+    learning_rate = float(constants.get("lr", 0.002))
+    critic_repeats = int(constants.get("critic_repeats", 1))
+    exponential_average_decay = float(constants.get("ema_decay", 0.99))
+
+    display_step = int(constants.get("display_step", 250))
+    checkpoint_step = int(constants.get("checkpoint_step", 2000))
+    sample_step = int(constants.get("sample_step", 1000))
+    refresh_stat_step = int(constants.get("refresh_stat_step", 5))
 
     # Initialize Generator
     gen = Generator().to(device)
@@ -50,7 +48,7 @@ def train(
         lr=learning_rate,
         betas=(beta_1, beta_2),
     )
-    ema = EMA(gen, 0.99)
+    ema = EMA(gen, exponential_average_decay)
     ema.register()
     gen.train()
 
