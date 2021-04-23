@@ -1,22 +1,10 @@
 [DEFAULT] 
-;For reference only, do not edit!
+final_image_size = 512
 ;4, 8, 16, 32, 64, 128, 256, 512
 batch_progression=24,16,16,16,12,10,5,5
 epoch_progression=10,20,20,30,30,20,20,15
 fade_percentage=0.5
-data=dir path
-
-[anime]
-epoch_progression=1,20,20,30,30,20,20,15
-data=./data/anime
-
-[abstract-art]
-batch_progression=24,16,16,16,12,10,5,5
-epoch_progression=5,10,10,20,20,20,20,15
-data=./data/art
-fade_percentage=0.45
-
-[training]
+;Training Constants
 gradient_lambda=10
 noise_length=512
 device=cuda
@@ -29,3 +17,13 @@ display_step=250
 checkpoint_step=2000
 sample_step =1000
 refresh_stat_step=5
+
+[anime]
+epoch_progression=1,20,20,30,30,20,20,15
+data=./data/anime
+
+[abstract-art]
+batch_progression=24,20,20,12,12,10,5,5
+epoch_progression=5,10,10,20,20,20,20,15
+fade_percentage=0.45
+data=./data/art

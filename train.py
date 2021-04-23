@@ -1,5 +1,6 @@
 import torch
 from tqdm.auto import tqdm
+from torchvision import datasets, transforms
 
 from gan import Generator, Critic, EMA
 from helper import (
@@ -11,28 +12,54 @@ from helper import (
 
 
 def train(
-    images,
-    epoch_progresson,
-    batch_progression,
-    fade_in_percentage,
-    constants,
+    config,
     checkpoint=None,
     use_r1_loss=True,
 ):
     # Load constants
-    c_lambda = int(constants.get("gradient_lambda", 10))
-    noise_size = int(constants.get("noise_length", 512))
-    device = constants.get("device", "cuda")
-    beta_1 = float(constants.get("beta_1", 0.00))
-    beta_2 = float(constants.get("beta_2", 0.99))
-    learning_rate = float(constants.get("lr", 0.002))
-    critic_repeats = int(constants.get("critic_repeats", 1))
-    exponential_average_decay = float(constants.get("ema_decay", 0.99))
+    c_lambda = int(config.get("gradient_lambda", 10))
+    noise_size = int(config.get("noise_length", 512))
+    device = config.get("device", "cuda")
+    beta_1 = float(config.get("beta_1", 0.00))
+    beta_2 = float(config.get("beta_2", 0.99))
+    learning_rate = float(config.get("lr", 0.001))
+    critic_repeats = int(config.get("critic_repeats", 1))
+    exponential_average_decay = float(config.get("ema_decay", 0.99))
 
-    display_step = int(constants.get("display_step", 250))
-    checkpoint_step = int(constants.get("checkpoint_step", 2000))
-    sample_step = int(constants.get("sample_step", 1000))
-    refresh_stat_step = int(constants.get("refresh_stat_step", 5))
+    display_step = int(config.get("display_step", 250))
+    checkpoint_step = int(config.get("checkpoint_step", 2000))
+    sample_step = int(config.get("sample_step", 1000))
+    refresh_stat_step = int(config.get("refresh_stat_step", 5))
+
+    # The batch size in each image size progression.
+    batch_progression = config.get("batch_progression").split(",")
+    batch_progression = list(map(int, batch_progression))
+
+    # The number of epochs in each image size progression.
+    epoch_progresson = config.get("epoch_progression").split(",")
+    epoch_progresson = list(map(int, epoch_progresson))
+
+    # Percentage of each step will be a fade in.
+    fade_in_percentage = float(config.get("fade_percentage", 0.5))
+
+    final_image_size = int(config.get("final_image_size", 512))
+
+    transformation = transforms.Compose(
+        [
+            transforms.Resize((final_image_size, final_image_size)),
+            transforms.RandomHorizontalFlip(),
+            transforms.ToTensor(),
+            transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5), inplace=True),
+            transforms.ConvertImageDtype(float),
+        ]
+    )
+
+    # Path to dataset.
+    data_path = config.get("data", None)
+    if data_path is None:
+        raise ValueError("Data path cannot be NoneType!")
+
+    images = datasets.ImageFolder(data_path, transformation)
 
     # Initialize Generator
     gen = Generator().to(device)

@@ -41,8 +41,6 @@ def display_image(
 """
 Creates new subfolder in root directory.
 Saves each image seperately in full resolution.
-
-image_prefix: The string to append before the image index.
 """
 
 
