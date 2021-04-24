@@ -3,11 +3,6 @@ import torch
 
 from train import train
 
-"""
-TODOs:
-- Better Logging
-"""
-
 # LOADING DATA
 config_section = "anime"
 
@@ -22,7 +17,4 @@ if __name__ == "__main__":
 
     settings = config[config_section]
 
-    train(
-        settings,
-        checkpoint=None,
-    )
+    train(settings, checkpoint=None)
