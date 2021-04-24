@@ -17,6 +17,7 @@ display_step=250
 checkpoint_step=2000
 sample_step =1000
 refresh_stat_step=5
+use_r1=True
 
 [anime]
 epoch_progression=1,20,20,30,30,20,20,15

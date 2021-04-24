@@ -11,12 +11,9 @@ from helper import (
 )
 
 
-def train(
-    config,
-    checkpoint=None,
-    use_r1_loss=True,
-):
-    # Load constants
+def train(config, checkpoint=None):
+
+    # Load constants.
     c_lambda = int(config.get("gradient_lambda", 10))
     noise_size = int(config.get("noise_length", 512))
     device = config.get("device", "cuda")
@@ -25,6 +22,7 @@ def train(
     learning_rate = float(config.get("lr", 0.001))
     critic_repeats = int(config.get("critic_repeats", 1))
     exponential_average_decay = float(config.get("ema_decay", 0.99))
+    use_r1_loss = str(config.get("use_r1", "True")) == "True"
 
     display_step = int(config.get("display_step", 250))
     checkpoint_step = int(config.get("checkpoint_step", 2000))
@@ -39,7 +37,7 @@ def train(
     epoch_progresson = config.get("epoch_progression").split(",")
     epoch_progresson = list(map(int, epoch_progresson))
 
-    # Percentage of each step will be a fade in.
+    # Percentage of each step that will be a fade in.
     fade_in_percentage = float(config.get("fade_percentage", 0.5))
 
     final_image_size = int(config.get("final_image_size", 512))
@@ -86,10 +84,10 @@ def train(
     )
     critic.train()
 
-    # Create a constant set of noise vectors to show same image progression.
+    # Create a constant set of noise vectors to show image progression.
     show_noise = get_truncated_noise(25, 512, 0.75).to(device)
 
-    # Some other variables to keep track of.
+    # Some other variables to track.
     iters = 0
     c_loss_history = []
     g_loss_history = []
@@ -268,7 +266,7 @@ def train(
 
                 ema.restore()
 
-    # TRAINING FINISHED - save final set of samples and save model
+    # TRAINING FINISHED - save final set of samples and save model.
     ema.apply_shadow()
     examples = gen(show_noise, alpha=alpha, steps=steps)
     save_image_samples(examples, "FINAL", image_prefix="F")
