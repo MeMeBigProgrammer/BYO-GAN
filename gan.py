@@ -341,7 +341,7 @@ class MiniBatchStdDev(nn.Module):
 
         (batch_size, channels, h, w) = x.shape
 
-        if self.group_size % batch_size != 0:
+        if batch_size % self.group_size != 0:
             self.group_size = batch_size
 
         minibatch = x.reshape([self.group_size, -1, 1, channels, h, w])

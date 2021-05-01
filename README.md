@@ -11,10 +11,11 @@ As a part of my independent study for Junior year, my final project was to recre
 
 ### Datasets:
 - [Anime Profile Dataset](https://www.kaggle.com/prasoonkottarathil/gananime-lite)
+  - [License](https://creativecommons.org/licenses/by-sa/4.0/)
 - [Abstract Art Dataset](https://www.kaggle.com/bryanb/abstract-art-gallery)
 
 ### MISC:
-Big thanks to these projects for helping me fix issues in my code!
+Big thanks to these projects for helping me troubleshoot issues I had!
 - [huangzh13](https://github.com/huangzh13/StyleGAN.pytorch)
 - [rosinality](https://github.com/rosinality/style-based-gan-pytorch)
 
