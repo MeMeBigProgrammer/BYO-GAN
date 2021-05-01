@@ -77,16 +77,27 @@ class AdaINBlock(nn.Module):
 
 
 class StyleConvBlock(nn.Module):  # refactor so constant sits here.
-    def __init__(self, in_chan, out_chan):
+    def __init__(self, in_chan, out_chan, is_initial=False):
         super().__init__()
 
-        self.conv = EqualizedConv2d(in_chan, out_chan, kernel_size=3, padding=1)
+        self.is_initial = is_initial
+
+        if is_initial:
+            self.conv = nn.Parameter(torch.randn(1, in_chan, 4, 4))
+        else:
+            self.conv = EqualizedConv2d(in_chan, out_chan, kernel_size=3, padding=1)
+
         self.inject_noise = InjectSecondaryNoise(out_chan)
         self.activation = nn.LeakyReLU(0.2)
         self.adain = AdaINBlock(out_chan)
 
-    def forward(self, x, style, noise=None):
-        out = self.conv(x)
+    def forward(self, x, style, batch_size, noise=None):
+
+        if self.is_initial:
+            out = self.conv.repeat(batch_size, 1, 1, 1)
+        else:
+            out = self.conv(x)
+
         out = self.inject_noise(out, noise=noise)
         out = self.activation(out)
         return self.adain(out, style)
@@ -105,13 +116,7 @@ class StyleGanBlock(nn.Module):
 
         self.upsample = nn.Upsample(scale_factor=2, mode="bilinear")
 
-        if is_initial:
-            self.constant = nn.Parameter(torch.randn(1, in_chan, 4, 4))
-            self.inject_noise = InjectSecondaryNoise(out_chan)
-            self.activation = nn.LeakyReLU(0.2)
-            self.adain = AdaINBlock(out_chan)
-        else:
-            self.conv_1 = StyleConvBlock(in_chan, out_chan)
+        self.conv_1 = StyleConvBlock(in_chan, out_chan, is_initial=is_initial)
 
         self.conv_2 = StyleConvBlock(out_chan, out_chan)
 
@@ -122,15 +127,9 @@ class StyleGanBlock(nn.Module):
         if self.does_upsample:
             x = self.upsample(x)
 
-        if self.is_initial:
-            out = self.constant.repeat(batch_size, 1, 1, 1)
-            out = self.inject_noise(out, noise=noise)
-            out = self.activation(out)
-            out = self.adain(out, style)
-        else:
-            out = self.conv_1(x, style, noise)
+        out = self.conv_1(x, style, batch_size, noise)
 
-        return self.conv_2(out, style, noise)
+        return self.conv_2(out, style, batch_size, noise)
 
 
 class MappingLayers(nn.Module):
