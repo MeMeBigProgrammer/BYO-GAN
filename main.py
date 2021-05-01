@@ -15,6 +15,9 @@ if __name__ == "__main__":
     # Load config section from CLI arguments.
     parser = argparse.ArgumentParser()
     parser.add_argument("config", help="Specify which config to use", type=str)
+    parser.add_argument(
+        "-c", "--checkpoint", dest="checkpoint", help="Relative path to checkpoint file"
+    )
     args = parser.parse_args()
 
     # Load config.
@@ -23,4 +26,4 @@ if __name__ == "__main__":
 
     settings = config[args.config]
 
-    train(settings, checkpoint=None)
+    train(settings, checkpoint=args.checkpoint)

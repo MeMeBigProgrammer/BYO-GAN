@@ -65,8 +65,8 @@ class AdaINBlock(nn.Module):
         self.norm = nn.InstanceNorm2d(in_channel)
         self.style = EqualizedLinear(style_dim, in_channel * 2)
 
-        self.style.linear.bias.data[:in_channel] = 1
-        self.style.linear.bias.data[in_channel:] = 0
+        self.style.bias.data[:in_channel] = 1
+        self.style.bias.data[in_channel:] = 0
 
     def forward(self, input, style):
         style = self.style(style).unsqueeze(2).unsqueeze(3)

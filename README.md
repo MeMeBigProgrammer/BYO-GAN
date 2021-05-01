@@ -21,18 +21,16 @@ Big thanks to these projects for helping me troubleshoot issues I had!
 
 # How To Run
 
-Edit the `config.txt` file and create a configuration setting to your liking. Use the two examples as a template. You can override any seen key under `DEFAULT`, but **DO NOT** delete/edit anything under the `DEFAULT` setting. 
+Edit the `config.txt` file and create a configuration setting to your liking. Use the two examples as a template. You can override any key, but do **NOT** delete anything under the `DEFAULT` setting. 
 
 ```shell
-python main.py [config name]
+python main.py [config name] -c checkpoint.pth
 ```
 
-W
 For instance,
 
 ```shell
 python main.py abstract-art
 ```
-
 
 runs with the `abstract-art` configuration.

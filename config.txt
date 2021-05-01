@@ -27,3 +27,8 @@ batch_progression=24,24,20,12,8,8,5,5
 epoch_progression=10,20,20,40,40,40,40,35
 fade_percentage=0.45
 data=./data/art
+
+[ffhq]
+batch_progression=40,36,24,12,8,8,5,5
+epoch_progression=10,20,20,40,40,40,40,35
+data=./data/ffhq
