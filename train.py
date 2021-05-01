@@ -232,7 +232,7 @@ def train(config, checkpoint=None):
                     )
 
                     pbar.set_description(
-                        f"g_loss: {avg_g_loss:.3}  c_loss: {avg_c_loss:.3}  epoch: {epoch}",
+                        f"g_loss: {avg_g_loss:.3}  c_loss: {avg_c_loss:.3}  epoch: {epoch + 1}",
                         refresh=True,
                     )
 

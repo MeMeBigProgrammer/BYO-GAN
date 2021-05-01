@@ -5,9 +5,8 @@ import argparse
 from train import train
 
 # TODO:
-# add use_r1 to config
 # try remove EMA
-# fix abstract art bugs
+# add checkpoint to cli arguments
 # build own equalzied learning rate pytorch
 
 if __name__ == "__main__":

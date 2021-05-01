@@ -24,7 +24,7 @@ epoch_progression=1,20,20,30,30,20,20,15
 data=./data/anime
 
 [abstract-art]
-batch_progression=24,20,20,12,12,10,5,5
-epoch_progression=5,10,10,20,20,20,20,15
+batch_progression=24,24,20,12,8,8,5,5
+epoch_progression=10,20,20,40,40,40,40,35
 fade_percentage=0.45
 data=./data/art
