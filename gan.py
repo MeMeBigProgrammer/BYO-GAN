@@ -6,63 +6,38 @@ import torch.nn.functional as F
 from math import sqrt
 
 
-class EqualLR:
-    def __init__(self, name):
-        self.name = name
-
-    def compute_weight(self, module):
-        weight = getattr(module, self.name + "_orig")
-        fan_in = weight.data.size(1) * weight.data[0][0].numel()
-
-        return weight * sqrt(2 / fan_in)
-
-    @staticmethod
-    def apply(module, name):
-        fn = EqualLR(name)
-
-        weight = getattr(module, name)
-        del module._parameters[name]
-        module.register_parameter(name + "_orig", nn.Parameter(weight.data))
-        module.register_forward_pre_hook(fn)
-
-        return fn
-
-    def __call__(self, module, input):
-        weight = self.compute_weight(module)
-        setattr(module, self.name, weight)
-
-
-def equal_lr(module, name="weight"):
-    EqualLR.apply(module, name)
-
-    return module
-
-
-class EqualizedConv2d(nn.Module):
+class EqualizedLinear(nn.Linear):
     def __init__(self, *args, **kwargs):
-        super().__init__()
+        super().__init__(*args, **kwargs)
+        self.weight.data.normal_()
+        self.bias.data.zero_()
 
-        conv = nn.Conv2d(*args, **kwargs)
-        conv.weight.data.normal_()
-        conv.bias.data.zero_()
-        self.conv = equal_lr(conv)
+        fan_in = self.weight.data.size()[1] * self.weight.data[0][0].numel()
+        self.equalized_coefficient = sqrt(2 / fan_in)
 
-    def forward(self, input):
-        return self.conv(input)
+    def forward(self, x):
+        return F.linear(x, self.weight * self.equalized_coefficient, self.bias)
 
 
-class EqualizedLinear(nn.Module):
+class EqualizedConv2d(nn.Conv2d):
     def __init__(self, *args, **kwargs):
-        super().__init__()
+        super().__init__(*args, **kwargs)
+        self.weight.data.normal_()
+        self.bias.data.zero_()
 
-        linear = nn.Linear(*args, **kwargs)
-        linear.weight.data.normal_()
-        linear.bias.data.zero_()
+        fan_in = self.weight.data.size()[1] * self.weight.data[0][0].numel()
+        self.equalized_coefficient = sqrt(2 / fan_in)
 
-        self.linear = equal_lr(linear)
-
-    def forward(self, input):
-        return self.linear(input)
+    def forward(self, x):
+        return F.conv2d(
+            x,
+            self.weight * self.equalized_coefficient,
+            self.bias,
+            self.stride,
+            self.padding,
+            self.dilation,
+            self.groups,
+        )
 
 
 class InjectSecondaryNoise(nn.Module):

@@ -5,9 +5,7 @@ import argparse
 from train import train
 
 # TODO:
-# try remove EMA
 # add checkpoint to cli arguments
-# build own equalzied learning rate pytorch
 
 if __name__ == "__main__":
     # Check Cuda Driver and Devices are good.
