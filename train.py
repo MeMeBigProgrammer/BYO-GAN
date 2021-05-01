@@ -2,7 +2,7 @@ import torch
 from tqdm.auto import tqdm
 from torchvision import datasets, transforms
 
-from gan import Generator, Critic, EMA
+from gan import Generator, Critic
 from helper import (
     get_truncated_noise,
     display_image,
@@ -21,7 +21,6 @@ def train(config, checkpoint=None):
     beta_2 = float(config.get("beta_2", 0.99))
     learning_rate = float(config.get("lr", 0.001))
     critic_repeats = int(config.get("critic_repeats", 1))
-    exponential_average_decay = float(config.get("ema_decay", 0.99))
     use_r1_loss = str(config.get("use_r1", "True")) == "True"
 
     display_step = int(config.get("display_step", 250))
@@ -73,8 +72,6 @@ def train(config, checkpoint=None):
         lr=learning_rate,
         betas=(beta_1, beta_2),
     )
-    ema = EMA(gen, exponential_average_decay)
-    ema.register()
     gen.train()
 
     # Initialize Critic
@@ -217,7 +214,6 @@ def train(config, checkpoint=None):
                 gen.zero_grad()
                 g_loss.backward()
                 gen_opt.step()
-                ema.update()
 
                 g_loss_history.append(g_loss.item())
 
@@ -236,7 +232,6 @@ def train(config, checkpoint=None):
                         refresh=True,
                     )
 
-                ema.apply_shadow()
                 with torch.no_grad():
                     examples = gen(show_noise, alpha=alpha, steps=steps)
                     if iters > 0 and iters % display_step == 0:
@@ -264,10 +259,8 @@ def train(config, checkpoint=None):
                     if iters > 0 and iters % sample_step == 0:
                         save_image_samples(examples, f"step-{iters}", image_prefix="s")
 
-                ema.restore()
-
     # TRAINING FINISHED - save final set of samples and save model.
-    ema.apply_shadow()
+    # ema.apply_shadow()
     examples = gen(show_noise, alpha=alpha, steps=steps)
     save_image_samples(examples, "FINAL", image_prefix="F")
     torch.save(
