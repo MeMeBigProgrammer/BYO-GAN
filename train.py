@@ -260,7 +260,6 @@ def train(config, checkpoint=None):
                         save_image_samples(examples, f"step-{iters}", image_prefix="s")
 
     # TRAINING FINISHED - save final set of samples and save model.
-    # ema.apply_shadow()
     examples = gen(show_noise, alpha=alpha, steps=steps)
     save_image_samples(examples, "FINAL", image_prefix="F")
     torch.save(

@@ -1,5 +1,3 @@
-# Formatted using 'autopep8' and 'black' VS Code Extentions
-
 import torch
 from torch import nn
 import torch.nn.functional as F
