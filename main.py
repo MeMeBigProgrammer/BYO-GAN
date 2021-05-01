@@ -5,7 +5,7 @@ import argparse
 from train import train
 
 if __name__ == "__main__":
-    # Check Cuda Driver and Devices are good.
+    # Check that Cuda driver and devices are good.
     if torch.device("cuda" if torch.cuda.is_available() else "cpu").type == "cuda":
         print(torch.cuda.get_device_name(0))
 

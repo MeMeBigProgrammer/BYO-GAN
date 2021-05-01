@@ -13,6 +13,7 @@ As a part of my independent study for Junior year, my final project was to recre
 - [Anime Profile Dataset](https://www.kaggle.com/prasoonkottarathil/gananime-lite)
   - [License](https://creativecommons.org/licenses/by-sa/4.0/)
 - [Abstract Art Dataset](https://www.kaggle.com/bryanb/abstract-art-gallery)
+- [FFHQ Dataset](https://www.kaggle.com/arnaud58/flickrfaceshq-dataset-ffhq)
 
 ### MISC:
 Big thanks to these projects for helping me troubleshoot issues I had!
