@@ -111,7 +111,7 @@ def train(config, checkpoint=None):
         steps = int(index + 1)
         im_count = 0
         images = datasets.ImageFolder(
-            os.path.join(data_path, f"set_{steps}"), transformation
+            os.path.join(data_path, "prepared", f"set_{steps}"), transformation
         )
         dataset = torch.utils.data.DataLoader(
             images,

@@ -7,7 +7,6 @@ fade_percentage=0.5
 dataloader_threads=2
 ;Training Constants
 gradient_lambda=10
-noise_length=512
 device=cuda
 beta_1=0.00
 beta_2=0.99
