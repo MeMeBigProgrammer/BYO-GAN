@@ -42,8 +42,6 @@ def train(config, checkpoint=None):
     # Percentage of each step that will be a fade in.
     fade_in_percentage = float(config.get("fade_percentage", 0.5))
 
-    # final_image_size = int(config.get("final_image_size", 512))
-
     transformation = transforms.Compose(
         [
             transforms.RandomHorizontalFlip(),
