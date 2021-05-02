@@ -23,6 +23,7 @@ def train(config, checkpoint=None):
     learning_rate = float(config.get("lr", 0.001))
     critic_repeats = int(config.get("critic_repeats", 1))
     use_r1_loss = str(config.get("use_r1", "True")) == "True"
+    num_workers = int(config.get("dataloader_threads", 2))
 
     display_step = int(config.get("display_step", 250))
     checkpoint_step = int(config.get("checkpoint_step", 2000))
@@ -115,7 +116,7 @@ def train(config, checkpoint=None):
             images,
             batch_size=batch_progression[index],
             shuffle=True,
-            num_workers=2,
+            num_workers=num_workers,
         )
 
         fade_in = fade_in_percentage * step_epochs * len(dataset)

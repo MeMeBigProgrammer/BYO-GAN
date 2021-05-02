@@ -4,6 +4,7 @@ final_image_size = 512
 batch_progression=24,16,16,16,12,10,5,5
 epoch_progression=10,20,20,30,30,20,20,15
 fade_percentage=0.5
+dataloader_threads=2
 ;Training Constants
 gradient_lambda=10
 noise_length=512
