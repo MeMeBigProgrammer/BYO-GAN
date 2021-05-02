@@ -39,9 +39,8 @@ if __name__ == "__main__":
 
     # Create dir for prepared datasets. If it exists, delete and overwrite.
     prepared_path = out_path = os.path.join(datapath, "prepared")
-    if os.path.exists(prepared_path):
-        shutil.rmtree(prepared_path)
-    os.mkdir(prepared_path)
+    if not os.path.exists(prepared_path):
+        os.mkdir(prepared_path)
 
     index = 0
     cur_size = start_size
@@ -50,6 +49,13 @@ if __name__ == "__main__":
         image = 0
 
         out_path = os.path.join(prepared_path, f"set_{index + 1}", "images")
+        if os.path.exists(out_path):
+            if input(f"set_{index + 1} exists. Delete? (y/N)") == "y":
+                shutil.rmtree(out_path)
+            else:
+                index += 1
+                continue
+
         os.makedirs(out_path)
 
         transformation = transforms.Compose(
