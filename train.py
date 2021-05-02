@@ -2,6 +2,7 @@ import torch
 from torch import nn
 from tqdm.auto import tqdm
 from torchvision import datasets, transforms
+import os
 
 from gan import Generator, Critic
 from helper import (
@@ -41,11 +42,10 @@ def train(config, checkpoint=None):
     # Percentage of each step that will be a fade in.
     fade_in_percentage = float(config.get("fade_percentage", 0.5))
 
-    final_image_size = int(config.get("final_image_size", 512))
+    # final_image_size = int(config.get("final_image_size", 512))
 
     transformation = transforms.Compose(
         [
-            transforms.Resize((final_image_size, final_image_size)),
             transforms.RandomHorizontalFlip(),
             transforms.ToTensor(),
             transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5), inplace=True),
@@ -55,10 +55,8 @@ def train(config, checkpoint=None):
 
     # Path to dataset.
     data_path = config.get("data", None)
-    if data_path is None:
-        raise ValueError("Data path cannot be NoneType!")
-
-    images = datasets.ImageFolder(data_path, transformation)
+    if not os.path.exists(os.path.join(data_path, "prepared")):
+        raise OSError("Did not detect prepared dataset!")
 
     # Initialize Generator
     gen = Generator().to(device)
@@ -112,6 +110,9 @@ def train(config, checkpoint=None):
 
         steps = int(index + 1)
         im_count = 0
+        images = datasets.ImageFolder(
+            os.path.join(data_path, f"set_{steps}"), transformation
+        )
         dataset = torch.utils.data.DataLoader(
             images,
             batch_size=batch_progression[index],
