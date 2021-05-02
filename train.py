@@ -1,4 +1,5 @@
 import torch
+from torch import nn
 from tqdm.auto import tqdm
 from torchvision import datasets, transforms
 
@@ -72,6 +73,7 @@ def train(config, checkpoint=None):
         lr=learning_rate,
         betas=(beta_1, beta_2),
     )
+    gen = nn.DataParallel(gen)
     gen.train()
 
     # Initialize Critic
@@ -79,6 +81,7 @@ def train(config, checkpoint=None):
     critic_opt = torch.optim.Adam(
         critic.parameters(), lr=learning_rate, betas=(beta_1, beta_2)
     )
+    critic = nn.DataParallel(critic)
     critic.train()
 
     # Create a constant set of noise vectors to show image progression.
@@ -164,7 +167,7 @@ def train(config, checkpoint=None):
 
                     if use_r1_loss:
 
-                        c_loss = critic.get_r1_loss(
+                        c_loss = critic.module.get_r1_loss(
                             critic_fake_pred,
                             critic_real_pred,
                             real_im,
@@ -174,7 +177,7 @@ def train(config, checkpoint=None):
                             c_lambda,
                         )
                     else:
-                        c_loss = critic.get_wgan_loss(
+                        c_loss = critic.module.get_wgan_loss(
                             critic_fake_pred,
                             critic_real_pred,
                             real_im,
@@ -205,11 +208,11 @@ def train(config, checkpoint=None):
 
                 if use_r1_loss:
 
-                    g_loss = gen.get_r1_loss(critic_fake_pred)
+                    g_loss = gen.module.get_r1_loss(critic_fake_pred)
 
                 else:
 
-                    g_loss = gen.get_wgan_loss(critic_fake_pred)
+                    g_loss = gen.module.get_wgan_loss(critic_fake_pred)
 
                 gen.zero_grad()
                 g_loss.backward()
