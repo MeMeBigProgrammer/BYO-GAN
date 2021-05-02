@@ -20,7 +20,17 @@ Big thanks to these projects for helping me troubleshoot issues I had!
 - [huangzh13](https://github.com/huangzh13/StyleGAN.pytorch)
 - [rosinality](https://github.com/rosinality/style-based-gan-pytorch)
 
-# How To Run
+# How to run
+
+## Preparing a dataset
+
+Create a folder under `/data`, name it however you want.
+
+Place all of your dataset images into this new folder. It will work best if they are all 512x512.
+
+Run `python prep.py [path to images] [start size (4)] [end size (512)]`. At the moment, this script is ***SUPER*** dodgy and thrown together, so be prepared to tweak it in order to make it work. It essentially moves those original images into a new `/data/[name]/original/images` folder. Then, it resizes every image to match progressive growth and saves it under separate datasets under `/data/[name]/prepared`. 
+
+## Training
 
 Edit the `config.txt` file and create a configuration setting to your liking. Use the two examples as a template. You can override any key, but do **NOT** delete anything under the `DEFAULT` setting. 
 

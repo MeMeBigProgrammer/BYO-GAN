@@ -4,9 +4,9 @@ final_image_size = 512
 batch_progression=24,16,16,16,12,10,5,5
 epoch_progression=10,20,20,30,30,20,20,15
 fade_percentage=0.5
+dataloader_threads=2
 ;Training Constants
 gradient_lambda=10
-noise_length=512
 device=cuda
 beta_1=0.00
 beta_2=0.99
@@ -31,4 +31,5 @@ data=./data/art
 [ffhq]
 batch_progression=40,36,24,12,8,8,5,5
 epoch_progression=10,20,20,40,40,40,40,35
+dataloader_threads=7
 data=./data/ffhq

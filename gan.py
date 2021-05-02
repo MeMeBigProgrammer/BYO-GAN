@@ -45,12 +45,8 @@ class InjectSecondaryNoise(nn.Module):
 
     def forward(self, conv_output, noise=None):
         if noise is None:
-            noise_shape = (
-                conv_output.shape[0],
-                1,
-                conv_output.shape[2],
-                conv_output.shape[3],
-            )
+            noise_shape = conv_output.shape[:3]
+            noise_shape[1] = 1
             noise = torch.randn(noise_shape, device=conv_output.device)
 
         return conv_output + (self.weights * noise)
