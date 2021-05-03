@@ -4,6 +4,10 @@ import argparse
 
 from train import train
 
+# Add last alpha to checkpoint data
+# clean helper.py
+# clean and add better argumentation for generate_samples and prep.py
+
 if __name__ == "__main__":
     # Check that CUDA driver and devices are good.
     if torch.device("cuda" if torch.cuda.is_available() else "cpu").type == "cuda":

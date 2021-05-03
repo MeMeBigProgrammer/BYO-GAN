@@ -54,6 +54,7 @@ if __name__ == "__main__":
                 shutil.rmtree(out_path)
             else:
                 index += 1
+                cur_size = cur_size * 2
                 continue
 
         os.makedirs(out_path)
