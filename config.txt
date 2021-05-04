@@ -14,7 +14,6 @@ lr=0.002
 critic_repeats=1
 display_step=250
 checkpoint_step=2000
-sample_step =1000
 refresh_stat_step=5
 use_r1=True
 

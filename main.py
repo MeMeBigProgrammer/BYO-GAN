@@ -4,9 +4,9 @@ import argparse
 
 from train import train
 
-# Add last alpha to checkpoint data
-# clean helper.py
-# clean and add better argumentation for generate_samples and prep.py
+
+# clean and add better argumentation for prep.py
+# add proper device handling
 
 if __name__ == "__main__":
     # Check that CUDA driver and devices are good.
