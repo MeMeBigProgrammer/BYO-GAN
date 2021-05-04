@@ -9,7 +9,6 @@ from helper import (
     get_truncated_noise,
     display_image,
     set_requires_grad,
-    save_image_samples,
 )
 
 
@@ -28,7 +27,6 @@ def train(config, checkpoint=None):
 
     display_step = int(config.get("display_step", 250))
     checkpoint_step = int(config.get("checkpoint_step", 2000))
-    sample_step = int(config.get("sample_step", 1000))
     refresh_stat_step = int(config.get("refresh_stat_step", 5))
 
     # The batch size in each image size progression.
@@ -255,16 +253,13 @@ def train(config, checkpoint=None):
                                 "im_count": im_count,
                                 "step": steps,
                                 "epoch": epoch,
+                                "alpha": alpha,
                             },
                             f"./checkpoints/chk-{iters}.pth",
                         )
 
-                    if iters > 0 and iters % sample_step == 0:
-                        save_image_samples(examples, f"step-{iters}", image_prefix="s")
-
     # TRAINING FINISHED - save final set of samples and save model.
     examples = gen(show_noise, alpha=alpha, steps=steps)
-    save_image_samples(examples, "FINAL", image_prefix="F")
     torch.save(
         {
             "gen": gen.state_dict(),
@@ -273,6 +268,7 @@ def train(config, checkpoint=None):
             "im_count": im_count,
             "step": steps,
             "epoch": epoch,
+            "alpha": None,
         },
         "./checkpoints/FINAL.pth",
     )

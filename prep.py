@@ -14,13 +14,15 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "start_size",
-        help="path to data set. Eg './data/images'",
-        type=str,
+        default=4,
+        help="first progression image size (default is 4)",
+        type=int,
     )
     parser.add_argument(
         "end_size",
-        help="path to data set. Eg './data/images'",
-        type=str,
+        default=512,
+        help="last progression image size (default is 512)",
+        type=int,
     )
 
     args = parser.parse_args()
@@ -54,6 +56,7 @@ if __name__ == "__main__":
                 shutil.rmtree(out_path)
             else:
                 index += 1
+                cur_size = cur_size * 2
                 continue
 
         os.makedirs(out_path)
@@ -77,7 +80,8 @@ if __name__ == "__main__":
 
         for batch, _ in tqdm(dataset):
             for im in batch:
-                utils.save_image(im, os.path.join(out_path, f"image-{image}.png"))
+                image_name = f"image-{image}.png"
+                utils.save_image(im, os.path.join(out_path, image_name))
                 image += 1
 
         cur_size = cur_size * 2

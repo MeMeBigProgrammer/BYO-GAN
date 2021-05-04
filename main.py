@@ -13,7 +13,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("config", help="Specify which config to use", type=str)
     parser.add_argument(
-        "-c", "--checkpoint", dest="checkpoint", help="Relative path to checkpoint file"
+        "-c", "--checkpoint", dest="checkpoint", help="Path to checkpoint file"
     )
     args = parser.parse_args()
 

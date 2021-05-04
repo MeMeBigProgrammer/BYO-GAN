@@ -13,6 +13,7 @@ As a part of my independent study for Junior year, my final project was to recre
 - [Anime Profile Dataset](https://www.kaggle.com/prasoonkottarathil/gananime-lite)
   - [License](https://creativecommons.org/licenses/by-sa/4.0/)
 - [Abstract Art Dataset](https://www.kaggle.com/bryanb/abstract-art-gallery)
+- [Abstract Art Images](https://www.kaggle.com/greg115/abstract-art)
 - [FFHQ Dataset](https://www.kaggle.com/arnaud58/flickrfaceshq-dataset-ffhq)
 
 ### MISC:
@@ -45,3 +46,12 @@ python main.py abstract-art
 ```
 
 runs with the `abstract-art` configuration.
+
+## Getting Full Resolution Samples
+
+TODO
+
+## TODOS:
+
+- add proper device handling
+- learning rate scheduling with config
