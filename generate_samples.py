@@ -9,7 +9,7 @@ from helper import get_truncated_noise
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("model", help="path to saved model (.pth file)", type=str)
+    parser.add_argument("model", help="path to saved model", type=str)
     parser.add_argument("images", help="number of images to produce", type=int)
     parser.add_argument(
         "-d" "--device",
@@ -35,7 +35,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "-t" "--truncation",
         dest="trunc",
-        help="truncation trick cut off",
+        help="truncation cut off",
         default=512,
         type=int,
     )

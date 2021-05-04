@@ -19,7 +19,9 @@ def display_image(
     else:  # multiple images
         nrow = int(sqrt(num_display))
 
-        image_grid = utils.make_grid(images.detach().cpu()[:num_display], nrow=nrow)
+        image_list = images.detach().cpu()[:num_display]
+
+        image_grid = utils.make_grid(image_list, nrow=nrow)
 
         plt.imshow(image_grid.permute(1, 2, 0).squeeze())
 

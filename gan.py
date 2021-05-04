@@ -56,7 +56,7 @@ class AdaINBlock(nn.Module):
     def __init__(self, in_channel, style_dim=512):
         super().__init__()
 
-        self.norm = nn.InstanceNorm2d(in_channel)
+        self.norm = nn.InstanceNorm2d(in_channel, eps=1e-8)
         self.style = EqualizedLinear(style_dim, in_channel * 2)
 
         self.style.bias.data[:in_channel] = 1
@@ -66,8 +66,7 @@ class AdaINBlock(nn.Module):
         style = self.style(style).unsqueeze(2).unsqueeze(3)
         gamma, beta = style.chunk(2, 1)
 
-        out = self.norm(input)
-        out = gamma * out + beta
+        out = gamma * self.norm(input) + beta
 
         return out
 

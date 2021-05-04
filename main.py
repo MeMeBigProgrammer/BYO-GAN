@@ -4,10 +4,6 @@ import argparse
 
 from train import train
 
-
-# clean and add better argumentation for prep.py
-# add proper device handling
-
 if __name__ == "__main__":
     # Check that CUDA driver and devices are good.
     if torch.device("cuda" if torch.cuda.is_available() else "cpu").type == "cuda":
@@ -17,7 +13,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("config", help="Specify which config to use", type=str)
     parser.add_argument(
-        "-c", "--checkpoint", dest="checkpoint", help="Relative path to checkpoint file"
+        "-c", "--checkpoint", dest="checkpoint", help="Path to checkpoint file"
     )
     args = parser.parse_args()
 

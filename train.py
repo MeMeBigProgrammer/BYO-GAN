@@ -268,7 +268,7 @@ def train(config, checkpoint=None):
             "im_count": im_count,
             "step": steps,
             "epoch": epoch,
-            "alpha": alpha,
+            "alpha": None,
         },
         "./checkpoints/FINAL.pth",
     )
