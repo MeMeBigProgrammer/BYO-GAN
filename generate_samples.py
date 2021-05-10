@@ -14,6 +14,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "-d" "--device",
         help="specify pytorch device",
+        dest="device",
         default="cuda",
         type=str,
     )
@@ -36,7 +37,7 @@ if __name__ == "__main__":
         "-t" "--truncation",
         dest="trunc",
         help="truncation cut off",
-        default=512,
+        default=0.75,
         type=int,
     )
     args = parser.parse_args()
