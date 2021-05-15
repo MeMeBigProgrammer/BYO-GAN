@@ -53,8 +53,14 @@ runs with the `abstract-art` configuration.
 
 ## Getting Full Resolution Samples
 
-TODO
+```shell
+python generate_samples.py ./checkpoints/checkpoint.pth 64 -o ./output/ -d cpu 
+```
 
-## TODOS:
+will generate `64` images from the model saved at `./checkpoints/checkpoint.pth` and save them in the `./output` folder. It will use the CPU. 
 
-- learning rate scheduling with config
+```shell
+python generate_samples.py -h
+```
+
+for more info. 

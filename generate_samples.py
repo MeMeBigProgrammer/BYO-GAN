@@ -14,7 +14,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "-d" "--device",
         help="specify pytorch device",
-        dest="device",
+        dest="device to run model on",
         default="cuda",
         type=str,
     )
@@ -22,7 +22,7 @@ if __name__ == "__main__":
         "-o",
         "--output",
         dest="output_dir",
-        help="dir for output",
+        help="output directory",
         default=".",
         type=str,
     )
@@ -36,7 +36,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "-t" "--truncation",
         dest="trunc",
-        help="truncation cut off",
+        help="truncation boundary",
         default=0.75,
         type=int,
     )
