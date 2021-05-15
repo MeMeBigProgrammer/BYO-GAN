@@ -21,6 +21,8 @@ Big thanks to these projects for helping me troubleshoot issues I had!
 - [huangzh13](https://github.com/huangzh13/StyleGAN.pytorch)
 - [rosinality](https://github.com/rosinality/style-based-gan-pytorch)
 
+Thanks to [Samuel Prevost](https://github.com/sam1902) for directly helping me troubleshoot issues.
+
 # How to run
 
 ## Preparing a dataset
@@ -29,7 +31,9 @@ Create a folder under `/data`, name it however you want.
 
 Place all of your dataset images into this new folder. It will work best if they are all 512x512.
 
-Run `python prep.py [path to images] [start size (4)] [end size (512)]`. At the moment, this script is ***SUPER*** dodgy and thrown together, so be prepared to tweak it in order to make it work. It essentially moves those original images into a new `/data/[name]/original/images` folder. Then, it resizes every image to match progressive growth and saves it under separate datasets under `/data/[name]/prepared`. 
+Run `python prep.py [path to images] [start size (4)] [end size (512)]`. 
+
+This script is ***SUPER*** dodgy and thrown together, so be prepared to tweak it in order to make it work. It essentially moves those original images into a new `/data/[name]/original/images` folder. Then, it resizes every image to match progressive growth and saves it under separate datasets under `/data/[name]/prepared`, where `name` refers to the original folder (e.g. `/data/art`).
 
 ## Training
 
@@ -49,9 +53,14 @@ runs with the `abstract-art` configuration.
 
 ## Getting Full Resolution Samples
 
-TODO
+```shell
+python generate_samples.py ./checkpoints/checkpoint.pth 64 -o ./output/ -d cpu 
+```
 
-## TODOS:
+will generate `64` images from the model saved at `./checkpoints/checkpoint.pth` and save them in the `./output` folder. It will use the CPU. 
 
-- add proper device handling
-- learning rate scheduling with config
+```shell
+python generate_samples.py -h
+```
+
+for more info. 

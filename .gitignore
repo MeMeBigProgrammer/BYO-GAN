@@ -3,6 +3,5 @@ data/*/**
 output/*
 .vscode/
 checkpoints/**
-test.py
 __pycache__/
-test/
+*.code-workspace

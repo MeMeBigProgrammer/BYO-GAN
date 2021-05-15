@@ -186,13 +186,15 @@ class Generator(nn.Module):
 
         out = None
 
-        noise = []
+        if noise is None:
 
-        for i in range(steps):
-            size = 4 * 2 ** i
-            noise.append(
-                torch.randn(len(z_noise), 1, size, size, device=z_noise.device)
-            )
+            noise = []
+
+            for i in range(steps):
+                size = 4 * 2 ** i
+                noise.append(
+                    torch.randn(len(z_noise), 1, size, size, device=z_noise.device)
+                )
 
         out = noise[0]
 
