@@ -64,3 +64,9 @@ python generate_samples.py -h
 ```
 
 for more info. 
+
+# Results
+
+As my resources are limited, I was unable to run my program to completion. See [Nvidia's implementation](https://github.com/nvlabs/stylegan) for higher fidelity Results. 
+
+However, for the time that I did run this program, I did get meaningful results that show that this implementation is indeed functional:
