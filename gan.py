@@ -47,7 +47,7 @@ class InjectSecondaryNoise(nn.Module):
         if noise is None:
             noise_shape = conv_output.shape[:3]
             noise_shape[1] = 1
-            noise = torch.randn(noise_shape, device=conv_output.device)
+            noise = torch.randn(noise_shape, device=self.device)
 
         return conv_output + (self.weights * noise)
 
@@ -193,7 +193,7 @@ class Generator(nn.Module):
             for i in range(steps):
                 size = 4 * 2 ** i
                 noise.append(
-                    torch.randn(len(z_noise), 1, size, size, device=z_noise.device)
+                    torch.randn(len(z_noise), 1, size, size, device=self.device)
                 )
 
         out = noise[0]
