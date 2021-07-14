@@ -13,8 +13,8 @@ if __name__ == "__main__":
     parser.add_argument("images", help="number of images to produce", type=int)
     parser.add_argument(
         "-d" "--device",
-        help="specify pytorch device",
-        dest="device to run model on",
+        help="specify pytorch device to run model on",
+        dest="device",
         default="cuda",
         type=str,
     )
@@ -38,7 +38,7 @@ if __name__ == "__main__":
         dest="trunc",
         help="truncation boundary",
         default=0.75,
-        type=int,
+        type=float,
     )
     args = parser.parse_args()
 

@@ -64,3 +64,18 @@ python generate_samples.py -h
 ```
 
 for more info. 
+
+# Results
+
+As my resources are limited, I was unable to run my program to completion. See [Nvidia's implementation](https://github.com/nvlabs/stylegan) for higher fidelity Results. 
+
+However, for the time that I did run this program, I did get meaningful results that show that this implementation is indeed functional.
+
+16 FFHQ images:
+
+<img src="https://user-images.githubusercontent.com/28550422/125561041-8b3cf81d-c93b-46fc-aad8-a1fd3be48922.png" alt="faces" width="512" height="512"/>
+
+16 Abstract Art images:
+
+<img src="https://user-images.githubusercontent.com/28550422/125561099-99d50ea5-2f7e-45cc-b806-4942cc34ff9d.png" alt="art" width="512" height="512"/>
+
